@@ -260,7 +260,10 @@ class VehicleTracking(models.Model):
         wraps things up at end-of-day.
         """
         Visit = self.env['customer.visit'].sudo()
-        Attendance = self.env['hr.attendance'].sudo() if 'hr.attendance' in self.env else None
+        # source_trip_id comes from hr_field_attendance, which may not be installed.
+        Attendance = None
+        if 'hr.attendance' in self.env and 'source_trip_id' in self.env['hr.attendance']._fields:
+            Attendance = self.env['hr.attendance'].sudo()
         for rec in self:
             visit_ids = set()
 
@@ -354,6 +357,11 @@ class VehicleTracking(models.Model):
     @api.onchange('invoice_number')
     def _onchange_invoice_number(self):
         if not self.invoice_number:
+            self.invoice_match = False
+            self.invoice_message = ""
+            return
+        if 'account.move' not in self.env:
+            # Invoicing isn't installed on this database, so nothing to match against.
             self.invoice_match = False
             self.invoice_message = ""
             return
@@ -471,7 +479,7 @@ class VehicleTracking(models.Model):
 
     def action_validate(self):
         for rec in self:
-            if rec.invoice_number:
+            if rec.invoice_number and 'account.move' in rec.env:
                 invoice = rec.env['account.move'].search([
                     ('name', '=', rec.invoice_number),
                     ('move_type', '=', 'out_invoice')

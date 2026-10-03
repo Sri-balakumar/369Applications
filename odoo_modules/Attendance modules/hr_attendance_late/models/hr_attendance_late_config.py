@@ -389,7 +389,9 @@ class AttendanceLateConfig(models.Model):
     @api.model
     def get_office_timezone(self, employee_id=False):
         """Office tz name for displaying datetimes: config office timezone →
-        employee's own tz → any configured office tz → UTC."""
+        employee's own tz → an office tz configured for the current company →
+        the viewer's tz → the company partner's tz → UTC. The later steps keep
+        times readable on databases where Office Timezone was never filled in."""
         tz_name = False
         if employee_id:
             tz_name = self.get_config_for_employee(employee_id).get('timezone')
@@ -397,8 +399,13 @@ class AttendanceLateConfig(models.Model):
                 emp = self.env['hr.employee'].browse(employee_id)
                 tz_name = emp.exists() and emp.tz
         if not tz_name:
-            cfg = self.sudo().search([('timezone', '!=', False)], limit=1)
+            cfg = self.sudo().search([
+                ('timezone', '!=', False),
+                ('company_id', 'in', [self.env.company.id, False]),
+            ], limit=1)
             tz_name = cfg.timezone if cfg else False
+        if not tz_name:
+            tz_name = self.env.user.tz or self.env.company.partner_id.tz
         return tz_name or 'UTC'
 
     @api.model

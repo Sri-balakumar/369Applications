@@ -1,6 +1,6 @@
 {
     'name': 'Attendance Late Tracking & Deductions',
-    'version': '19.0.4.0.0',
+    'version': '19.0.4.0.1',
     'category': 'Human Resources/Attendance',
     'summary': 'Track late arrivals, grace periods, half-day Fridays, holidays, waivers, and salary deductions',
     'description': """

@@ -761,7 +761,7 @@
                                    required="1"
                                    readonly="trip_ended"
                                    domain="[('trip_status', '=', 'draft'), ('id', 'in', attendance_available_trip_ids)] + ([('source_id', '=', context['previous_trip_destination_id'])] if context.get('previous_trip_destination_id') else [])"
-                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True}"/>
+                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'redirect_to_additional_trip_attendance_id': attendance_id}"/>
                             <div class="text-muted small mt-1" colspan="2"
                                  invisible="trip_id or not context.get('previous_trip_destination_id') or attendance_available_trip_ids">
                                 No draft trip starts at the previous destination. Pre-register the next trip in <strong>Vehicle Tracking</strong> with its Source set to your current location, then come back here.

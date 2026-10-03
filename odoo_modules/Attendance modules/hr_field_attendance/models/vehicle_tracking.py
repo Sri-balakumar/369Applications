@@ -273,7 +273,37 @@ class VehicleTracking(models.Model):
                 if not att.source_trip_id:
                     att.source_trip_id = self.id
                 return att.action_edit_primary_trip()
+        additional_att_id = self.env.context.get('redirect_to_additional_trip_attendance_id')
+        if additional_att_id:
+            return self._open_additional_trip_popup(additional_att_id)
         return res
+
+    def _open_additional_trip_popup(self, attendance_id, with_trip=True):
+        """Reopen the Add Additional Trip popup after the trip was created
+        inline from its Source Trip dropdown ("Create..."). Without this the
+        vehicle.tracking Save/Discard buttons jump to the Vehicle Tracking
+        list and the user loses the attendance. Mirrors the Setup Primary
+        Trip redirect above."""
+        context = {
+            'default_attendance_id': attendance_id,
+            'previous_trip_destination_id': self.env.context.get('previous_trip_destination_id'),
+        }
+        if with_trip:
+            context.update({
+                'default_trip_id': self.id,
+                'default_start_km': self.start_km,
+            })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Add Additional Trip'),
+            'res_model': 'field.attendance.trip.line',
+            'view_mode': 'form',
+            'view_id': self.env.ref(
+                'hr_field_attendance.view_field_attendance_trip_line_form'
+            ).id,
+            'target': 'new',
+            'context': context,
+        }
 
     def action_reset_to_draft(self):
         """Reset to Draft must also clear End KM. The base reset clears the
@@ -294,6 +324,9 @@ class VehicleTracking(models.Model):
             att = self.env['hr.attendance'].browse(primary_att_id)
             if att.exists():
                 return att.action_edit_primary_trip()
+        additional_att_id = self.env.context.get('redirect_to_additional_trip_attendance_id')
+        if additional_att_id:
+            return self._open_additional_trip_popup(additional_att_id, with_trip=False)
         return super().action_discard_custom()
 
     def action_custom_save(self):
@@ -324,6 +357,14 @@ class VehicleTracking(models.Model):
                 if not att.source_trip_id:
                     att.source_trip_id = self.id
                 return att.action_edit_primary_trip()
+        # Add-Additional-Trip inline-create flow: same idea, return to that
+        # popup with this trip pre-selected.
+        additional_att_id = self.env.context.get('redirect_to_additional_trip_attendance_id')
+        if additional_att_id:
+            if self.ref == 'New':
+                self.ref = self.env['ir.sequence'].next_by_code(
+                    'vehicle.tracking.seq') or 'New'
+            return self._open_additional_trip_popup(additional_att_id)
         in_disclaimer = self.env.context.get('show_end_disclaimer')
         ready_to_end = (
             self.start_trip and not self.end_trip and not self.trip_cancel
