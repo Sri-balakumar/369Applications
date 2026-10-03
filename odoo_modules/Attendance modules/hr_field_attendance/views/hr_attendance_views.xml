@@ -38,6 +38,19 @@
             <xpath expr="//header/button[@name='action_custom_save']" position="attributes">
                 <attribute name="invisible">context.get('show_end_disclaimer') or context.get('from_trip_picker')</attribute>
             </xpath>
+            <!-- (b2) Same for header Discard / Start Trip when the form is a
+                 create popup on top of a field-attendance trip picker. They are
+                 object buttons: they SAVE the trip first and then return an
+                 action that replaces the calling popup, so the user loses it
+                 (and Discard leaves an orphan draft trip). The footer Save /
+                 Discard below always return to the calling popup; the trip is
+                 auto-started when the trip line is saved. -->
+            <xpath expr="//header/button[@name='action_discard_custom']" position="attributes">
+                <attribute name="invisible">context.get('from_trip_picker')</attribute>
+            </xpath>
+            <xpath expr="//header/button[@name='action_start_trip']" position="attributes">
+                <attribute name="invisible">start_trip or trip_cancel or context.get('from_trip_picker')</attribute>
+            </xpath>
             <!-- (c) Force Start KM to be mandatory while the trip is still
                  in Draft. Drops the "saved with start_km=0" trap that
                  currently leaves _auto_start_trip_and_visit unable to fire. -->
@@ -105,6 +118,11 @@
             <xpath expr="//field[@name='employee_id']" position="attributes">
                 <attribute name="required">context.get('from_visit_picker')</attribute>
             </xpath>
+            <!-- Mark as Done would save the new visit as Done, and the Visit
+                 dropdown only offers Draft visits, so it "disappears". -->
+            <xpath expr="//header/button[@name='action_done']" position="attributes">
+                <attribute name="invisible">state != 'draft' or context.get('from_visit_picker')</attribute>
+            </xpath>
         </field>
     </record>
 
@@ -129,8 +147,12 @@
                        decoration-info="trip_status == 'in_progress'"
                        decoration-success="trip_status == 'ended'"
                        decoration-danger="trip_status == 'cancelled'"/>
+                <!-- Hidden inside field-attendance popups: the Edit action opens
+                     a new popup that replaces (closes) the calling one. Edit via
+                     the arrow next to the selected trip instead. -->
                 <button name="action_open_picker_edit" type="object"
-                        string="Edit" icon="fa-pencil" class="btn-link"/>
+                        string="Edit" icon="fa-pencil" class="btn-link"
+                        column_invisible="context.get('from_trip_picker')"/>
             </list>
         </field>
     </record>
@@ -157,8 +179,11 @@
                 <field name="state" widget="badge"
                        decoration-muted="state == 'draft'"
                        decoration-success="state == 'done'"/>
+                <!-- Hidden inside field-attendance popups for the same reason as
+                     the trip picker's Edit button. -->
                 <button name="action_open_picker_edit" type="object"
-                        string="Edit" icon="fa-pencil" class="btn-link"/>
+                        string="Edit" icon="fa-pencil" class="btn-link"
+                        column_invisible="context.get('from_visit_picker')"/>
             </list>
         </field>
     </record>
