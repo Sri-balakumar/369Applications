@@ -1783,6 +1783,34 @@ export const getLateConfig = async (employeeId) => {
     const result = response.data?.result;
     if (result) {
       console.log('[Attendance] Late config:', JSON.stringify(result));
+      // Office Timezone left blank in the late config: ask the server for its
+      // fallback (employee tz → company office tz → user/company tz → UTC),
+      // otherwise the office-time formatters render nothing on such databases.
+      if (!result.timezone) {
+        try {
+          const tzResp = await axios.post(
+            `${ODOO_BASE_URL()}/web/dataset/call_kw`,
+            {
+              jsonrpc: '2.0',
+              method: 'call',
+              params: {
+                model: 'hr.attendance.late.config',
+                method: 'get_office_timezone',
+                args: [employeeId],
+                kwargs: {},
+              },
+            },
+            { headers }
+          );
+          const fallbackTz = tzResp.data?.result;
+          if (fallbackTz && typeof fallbackTz === 'string') {
+            console.log('[Attendance] Office timezone blank, using server fallback:', fallbackTz);
+            result.timezone = fallbackTz;
+          }
+        } catch (tzErr) {
+          console.warn('[Attendance] Office timezone fallback failed:', tzErr?.message);
+        }
+      }
       // Make the office timezone available to the synchronous time formatters.
       setOfficeTimezone(result.timezone);
       // Cache the raw config so the offline late-reason flow can read it.
