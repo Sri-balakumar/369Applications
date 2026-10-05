@@ -90,6 +90,32 @@
         </field>
     </record>
 
+    <!-- Trip form used by the field-attendance Source Trip dropdowns
+         (Create / Search More > New / edit arrow), via form_view_ref.
+         It has NO <footer>: an arch button with special="save"/"cancel"
+         inside a Many2one create dialog runs act_window_close, and that
+         closes the calling action popup (Add Additional Trip, Setup
+         Primary Trip...). Without a footer Odoo renders its own dialog
+         Save / Discard, which close only this dialog and fill the
+         dropdown. The header object buttons and + Add Fuel are removed
+         for the same reason. Primary children are combined after the
+         base form's extensions, so the picker banner and Start KM rule
+         from the inherit above still apply. -->
+    <record id="view_vehicle_tracking_form_picker" model="ir.ui.view">
+        <field name="name">vehicle.tracking.form.picker</field>
+        <field name="model">vehicle.tracking</field>
+        <field name="inherit_id" ref="vehicle_tracking.view_vehicle_tracking_form"/>
+        <field name="mode">primary</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="replace"/>
+            <xpath expr="//footer" position="replace"/>
+            <xpath expr="//button[@name='action_add_fuel_log']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+        </field>
+    </record>
+
     <!-- Inherit customer.visit's form view to:
            (a) surface the "Created from Field Attendance" yellow banner
                whenever the visit-create popup is opened via the
@@ -526,7 +552,7 @@
                                                    required="1"
                                                    readonly="trip_ended"
                                                    domain="[('trip_status', '=', 'draft'), ('id', 'in', parent.available_trip_ids)] + ([('source_id', '=', context['previous_trip_destination_id'])] if context.get('previous_trip_destination_id') else [])"
-                                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True}"/>
+                                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'form_view_ref': 'hr_field_attendance.view_vehicle_tracking_form_picker'}"/>
                                             <field name="source_location" readonly="1"
                                                    invisible="not trip_id"/>
                                             <field name="destination_location" readonly="1"
@@ -697,7 +723,7 @@
                                             <field name="trip_id"
                                                    readonly="trip_ended"
                                                    domain="[('trip_status', '=', 'draft'), ('id', 'in', attendance_available_trip_ids)] + ([('source_id', '=', context['previous_trip_destination_id'])] if context.get('previous_trip_destination_id') else [])"
-                                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True}"/>
+                                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'form_view_ref': 'hr_field_attendance.view_vehicle_tracking_form_picker'}"/>
                                             <div class="text-muted small mt-1" colspan="2"
                                                  invisible="trip_id or not context.get('previous_trip_destination_id') or attendance_available_trip_ids">
                                                 No draft trip starts at the previous destination. Pre-register the next trip in <strong>Vehicle Tracking</strong> with its Source set to your current location, then come back here.
@@ -786,7 +812,7 @@
                                    required="1"
                                    readonly="trip_ended"
                                    domain="[('trip_status', '=', 'draft'), ('id', 'in', attendance_available_trip_ids)] + ([('source_id', '=', context['previous_trip_destination_id'])] if context.get('previous_trip_destination_id') else [])"
-                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'redirect_to_additional_trip_attendance_id': attendance_id}"/>
+                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'form_view_ref': 'hr_field_attendance.view_vehicle_tracking_form_picker', 'redirect_to_additional_trip_attendance_id': attendance_id}"/>
                             <div class="text-muted small mt-1" colspan="2"
                                  invisible="trip_id or not context.get('previous_trip_destination_id') or attendance_available_trip_ids">
                                 No draft trip starts at the previous destination. Pre-register the next trip in <strong>Vehicle Tracking</strong> with its Source set to your current location, then come back here.
@@ -886,7 +912,7 @@
                             <field name="trip_id"
                                    readonly="trip_ended"
                                    domain="[('trip_status', '=', 'draft'), ('id', 'in', attendance_available_trip_ids)] + ([('source_id', '=', context['previous_trip_destination_id'])] if context.get('previous_trip_destination_id') else [])"
-                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True}"/>
+                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'default_source_id': context.get('previous_trip_destination_id'), 'default_start_km': attendance_previous_trip_end_km, 'from_trip_picker': True, 'form_view_ref': 'hr_field_attendance.view_vehicle_tracking_form_picker'}"/>
                             <div class="text-muted small mt-1" colspan="2"
                                  invisible="trip_id or not context.get('previous_trip_destination_id') or attendance_available_trip_ids">
                                 No draft trip starts at the previous destination. Pre-register the next trip in <strong>Vehicle Tracking</strong> with its Source set to your current location, then come back here.
