@@ -1588,6 +1588,7 @@ export const createFuelLogOdoo = async ({
   fuelInvoiceBase64,
   gpsLat,
   gpsLong,
+  gpsLocationName,
   username = DEFAULT_VEHICLE_TRACKING_USERNAME,
   password = DEFAULT_VEHICLE_TRACKING_PASSWORD,
   db = DEFAULT_VEHICLE_TRACKING_DB,
@@ -1615,6 +1616,8 @@ export const createFuelLogOdoo = async ({
     odometer: odometer != null && odometer !== '' ? Number(odometer) : undefined,
     gps_lat: gpsLat || undefined,
     gps_long: gpsLong || undefined,
+    // vehicle_tracking >= 19.0.2.5.2
+    gps_location_name: gpsLocationName || undefined,
   };
 
   // Optional images — convert local file URI to base64.

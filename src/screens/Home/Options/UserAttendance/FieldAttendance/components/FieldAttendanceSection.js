@@ -294,35 +294,40 @@ const FieldAttendanceSection = ({
     refresh({ silent: true });
   }, [refreshTrigger, attendanceId, refresh]);
 
-  // Load (or scrub) the pending-secondary-trip marker on mount and whenever
-  // the attendanceId changes. The marker is scoped by attendanceId so a
-  // stale entry from yesterday's attendance never surfaces on today's.
+  // Load (or scrub) the pending-secondary-trip marker. Runs on mount, when
+  // the attendanceId changes, AND on focus return — VehicleTrackingForm
+  // writes the marker on Start Trip while this section stays mounted, so
+  // without the focus reload the Pending card ("Enter Visits") never shows.
+  // The marker is scoped by attendanceId so a stale entry from yesterday's
+  // attendance never surfaces on today's.
+  const loadPendingMarker = useCallback(async (isCancelled = () => false) => {
+    const stored = await getPendingSecondaryTrip();
+    if (isCancelled()) return;
+    if (!stored) { setPendingSecondary(null); return; }
+    if (Number(stored.attendanceId) !== Number(attendanceId)) {
+      console.log(TAG, 'pending marker is for a different attendance — clearing', stored);
+      await clearPendingSecondaryTrip();
+      setPendingSecondary(null);
+      return;
+    }
+    console.log(TAG, 'loaded pending secondary trip marker', stored);
+    // Swap an offline id for the server id once the trip has synced.
+    const resolved = await resolvePendingTripId(stored.tripId);
+    if (isCancelled()) return;
+    if (resolved && resolved !== stored.tripId) {
+      const marker = { ...stored, tripId: resolved, offline: false };
+      await setPendingSecondaryTrip(marker);
+      setPendingSecondary(marker);
+      return;
+    }
+    setPendingSecondary(stored);
+  }, [attendanceId]);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const stored = await getPendingSecondaryTrip();
-      if (cancelled) return;
-      if (!stored) { setPendingSecondary(null); return; }
-      if (Number(stored.attendanceId) !== Number(attendanceId)) {
-        console.log(TAG, 'pending marker is for a different attendance — clearing', stored);
-        await clearPendingSecondaryTrip();
-        setPendingSecondary(null);
-        return;
-      }
-      console.log(TAG, 'loaded pending secondary trip marker', stored);
-      // Swap an offline id for the server id once the trip has synced.
-      const resolved = await resolvePendingTripId(stored.tripId);
-      if (cancelled) return;
-      if (resolved && resolved !== stored.tripId) {
-        const marker = { ...stored, tripId: resolved, offline: false };
-        await setPendingSecondaryTrip(marker);
-        setPendingSecondary(marker);
-        return;
-      }
-      setPendingSecondary(stored);
-    })();
+    loadPendingMarker(() => cancelled);
     return () => { cancelled = true; };
-  }, [attendanceId]);
+  }, [loadPendingMarker]);
 
   // After every server refresh, check whether the pending trip already has
   // a trip line on the server (i.e. the visit was attached). If so, the
@@ -370,10 +375,13 @@ const FieldAttendanceSection = ({
     (async () => {
       await refresh({ silent: true });
       if (cancelled) return;
+      await loadPendingMarker(() => cancelled);
+      if (cancelled) return;
       const pendingTripId = consumePendingNewTrip();
       const pendingVisitId = consumePendingNewVisit?.() || null;
       const sheet = lastActiveSheetRef.current;
       lastActiveSheetRef.current = null;
+      console.log(TAG, 'focus-return', { sheet, pendingTripId, pendingVisitId });
 
       // Two-phase secondary flow: user came back from VisitForm via
       // "Enter Visits" on the Pending Trip Card. Take the new visit id
@@ -381,7 +389,10 @@ const FieldAttendanceSection = ({
       // this finalises the trip line just like the popup's Save would,
       // but with the visit's lat/lng baked in at the moment of the save
       // (which is the actual visit location).
-      if (sheet === 'pending_attach' && pendingVisitId) {
+      // `!sheet` too: the ref is in-memory only, so a remount while VisitForm
+      // was open loses it — but with a pending marker for this attendance,
+      // a freshly created visit can only have come from Enter Visits.
+      if ((sheet === 'pending_attach' || !sheet) && pendingVisitId) {
         const stored = await getPendingSecondaryTrip();
         if (stored && Number(stored.attendanceId) === Number(attendanceId)) {
           try {
@@ -1729,10 +1740,13 @@ const TripCard = ({ label, trip, visits, readOnly, onEditTrip, onOpenTrip, onVie
 // once they've physically arrived at the visit location.
 const PendingTripCard = ({ pending, hydrated, busy, onEnterVisits }) => {
   const ref = hydrated?.ref || hydrated?.name || pending?.ref || '—';
-  const source = pending?.source || '';
-  const destination = pending?.destination || '';
-  const vehicleName = pending?.vehicleName || '';
-  const driverName = pending?.driverName || '';
+  // The local marker can miss fields (VTF pre-fills some without setting
+  // formData) — fall back to the server copy of the trip.
+  const m2oName = (v) => (Array.isArray(v) ? v[1] || '' : '');
+  const source = pending?.source || m2oName(hydrated?.source_id);
+  const destination = pending?.destination || m2oName(hydrated?.destination_id);
+  const vehicleName = pending?.vehicleName || m2oName(hydrated?.vehicle_id);
+  const driverName = pending?.driverName || m2oName(hydrated?.driver_id);
   const startKm = pending?.startKm != null ? String(pending.startKm) : '—';
   return (
     <View style={styles.pendingCard}>
@@ -1814,6 +1828,10 @@ const TripLineRow = ({ line, index, isReturn, readOnly, onEditTrip, onOpenTrip, 
           <ColRow k="Destination" v={trip?.destination} />
           <ColRow k="KM Travelled" v={String(line.km_travelled || 0)} />
           <ColRow k="Duration (Hrs)" v={fmtDuration(line.duration)} />
+          <ColRow k="GPS Latitude" v={fmtCoord(line.gps_latitude || trip?.start_latitude)} />
+          <ColRow k="GPS Longitude" v={fmtCoord(line.gps_longitude || trip?.start_longitude)} />
+          <ColRow k="End Latitude" v={fmtCoord(line.end_gps_latitude || trip?.end_latitude)} />
+          <ColRow k="End Longitude" v={fmtCoord(line.end_gps_longitude || trip?.end_longitude)} />
         </View>
         {/* Right column — Visit Details (omitted for return legs without a
             visit attached). */}
@@ -1824,6 +1842,8 @@ const TripLineRow = ({ line, index, isReturn, readOnly, onEditTrip, onOpenTrip, 
             <ColRow k="Customer" v={visit.customer || (Array.isArray(visit.partner_id) ? visit.partner_id[1] : '')} />
             <ColRow k="Date / Time" v={fmtDT(visit.date_time)} />
             <ColRow k="Location" v={visit.location_name} />
+            <ColRow k="Latitude" v={fmtCoord(visit.latitude)} />
+            <ColRow k="Longitude" v={fmtCoord(visit.longitude)} />
           </View>
         ) : null}
       </View>
@@ -1846,6 +1866,12 @@ const ColRow = ({ k, v }) => (
     <Text style={styles.colRowVal} numberOfLines={2}>{v || '—'}</Text>
   </View>
 );
+
+// GPS coordinate for display — Odoo sends '' / false / 0 when unset.
+const fmtCoord = (v) => {
+  const n = Number(v);
+  return v !== '' && v != null && v !== false && Number.isFinite(n) && n !== 0 ? String(v) : '—';
+};
 
 // Row of small chip-style action buttons rendered at the bottom of every
 // trip card. Hidden once the attendance is checked out. Add Fuel only

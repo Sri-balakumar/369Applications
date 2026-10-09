@@ -23,6 +23,7 @@ import * as Location from 'expo-location';
 import { StyledAlertModal } from '@components/Modal';
 import InAppCameraModal from '@components/Camera/InAppCameraModal';
 import { createFuelLogOdoo } from '@api/services/generalApi';
+import { getAddressFromCoords } from '@utils/addressFromCoords';
 
 const FIELD_COLOR = '#1976D2';
 const TAG = '[FA-FUEL]';
@@ -46,6 +47,7 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
   const [previewImageUri, setPreviewImageUri] = useState(null);
   const [gpsLat, setGpsLat] = useState(null);
   const [gpsLng, setGpsLng] = useState(null);
+  const [gpsAddress, setGpsAddress] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -70,6 +72,7 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
       setFuelInvoiceBase64('');
       setGpsLat(null);
       setGpsLng(null);
+      setGpsAddress('');
       setError('');
       (async () => {
         let haveInstant = false;
@@ -99,6 +102,16 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
       })();
     }
   }, [visible, trip?.id, trip?.ref]);
+
+  // Fuel-stop address from the captured fix — saved as the log's location.
+  useEffect(() => {
+    if (!visible || gpsLat == null || gpsLng == null) return undefined;
+    let cancelled = false;
+    getAddressFromCoords(gpsLat, gpsLng).then((addr) => {
+      if (!cancelled) setGpsAddress(addr || '');
+    });
+    return () => { cancelled = true; };
+  }, [visible, gpsLat, gpsLng]);
 
   const setImage = (target, uri, base64) => {
     if (target === 'odometer') {
@@ -202,6 +215,7 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
         fuelInvoiceBase64: fuelInvoiceBase64 || undefined,
         gpsLat: gpsLat != null ? String(gpsLat) : undefined,
         gpsLong: gpsLng != null ? String(gpsLng) : undefined,
+        gpsLocationName: gpsAddress || undefined,
       });
       console.log(TAG, 'save OK', res);
       onSaved?.(res);
@@ -237,9 +251,23 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
               <Text style={styles.tripCaption} numberOfLines={1}>
                 For trip: {trip.ref || `#${trip.id}`}
                 {Array.isArray(trip.vehicle_id) ? ` · ${trip.vehicle_id[1]}` : ''}
-                {gpsLat != null && gpsLng != null ? ` · GPS captured` : ' · capturing GPS…'}
               </Text>
             ) : null}
+
+            {/* Fuel-stop location — saved with the log. */}
+            <View style={styles.gpsBox}>
+              <MaterialCommunityIcons name="crosshairs-gps" size={14} color={FIELD_COLOR} />
+              <View style={{ flex: 1 }}>
+                {gpsLat != null && gpsLng != null ? (
+                  <>
+                    <Text style={styles.gpsText}>Lat: {Number(gpsLat).toFixed(7)}   Lng: {Number(gpsLng).toFixed(7)}</Text>
+                    <Text style={styles.gpsAddr} numberOfLines={2}>{gpsAddress || 'Resolving location…'}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.gpsText}>Capturing GPS…</Text>
+                )}
+              </View>
+            </View>
 
             <ScrollView contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
               <View style={styles.rowSplit}>
@@ -368,6 +396,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   title: { fontSize: 16, fontFamily: FONT_FAMILY.urbanistBold, color: '#222' },
   tripCaption: { fontSize: 11.5, color: '#666', fontFamily: FONT_FAMILY.urbanistMedium, marginBottom: 8 },
+  gpsBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#E3F2FD', borderRadius: 8, padding: 8 },
+  gpsText: { fontSize: 12, color: '#0D47A1', fontFamily: FONT_FAMILY.urbanistBold },
+  gpsAddr: { fontSize: 11.5, color: '#444', fontFamily: FONT_FAMILY.urbanistMedium, marginTop: 2 },
   rowSplit: { flexDirection: 'row', gap: 8 },
   label: { fontSize: 12, fontFamily: FONT_FAMILY.urbanistBold, color: '#666', marginTop: 12, marginBottom: 4 },
   input: { backgroundColor: '#F5F5F5', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontFamily: FONT_FAMILY.urbanistMedium, color: '#222' },

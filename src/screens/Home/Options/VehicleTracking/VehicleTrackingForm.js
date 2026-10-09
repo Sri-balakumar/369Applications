@@ -35,6 +35,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StyledAlertModal } from '@components/Modal';
 import InAppCameraModal from '@components/Camera/InAppCameraModal';
 import { verifyWithinRadius, DEST_VERIFY_RADIUS_M } from '@utils/geoVerify';
+import { getAddressFromCoords } from '@utils/addressFromCoords';
 import { formatDateTimeOffice, getOfficeTimezone, hydrateOfficeTimezone } from '@utils/officeTime';
 // validation will be handled inline in this file to avoid stale state issues
 // These Odoo `vehicle.tracking` fields are mapped in this form: amount, battery_checking, company_id, completion_status, coolant_water, create_date, create_uid, daily_checks, date, destination, display_name, driver_id, duration, end_fuel_checking, end_fuel_document, end_fuel_document_filename, end_fuel_status, end_km, end_latitude, end_longitude, end_time, end_trip, estimated_time, fuel_checking, fuel_status, id, image_url, invoice_line_ids, invoice_match, invoice_message, invoice_number, km_travelled, number_plate, oil_checking, purpose_of_visit, ref, remarks, source, start_km, start_latitude
@@ -65,6 +66,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         showToastMessage('Capturing fuel GPS...', 'info');
         const loc = await getCurrentLocation('Add Fuel');
         console.log('[VehicleTrackingForm] Add Fuel GPS captured:', loc);
+        if (loc?.source === 'fallback') throw new Error('no GPS fix');
         // Kept separate from start_latitude/start_longitude — writing the fuel
         // stop there made the next trip update overwrite the real start point.
         setFormData(prev => ({
@@ -1308,6 +1310,15 @@ const VehicleTrackingForm = ({ navigation, route }) => {
 
     try {
       const current = await getCurrentLocation('Verify Source');
+      // No real fix — never seed the placeholder FALLBACK coords as the trip's
+      // start GPS (they'd be saved on Start Trip as a bogus location).
+      if (current?.source === 'fallback') {
+        console.log('[verifySource] no GPS fix (fallback) — not storing coords');
+        showToastMessage('Could not get your location. Turn on GPS and retry.', 'warning');
+        setSourceMatched(false);
+        setSourceDistance(null);
+        return { matched: false, distance: null };
+      }
       // Seed page state with the verified GPS so Start Trip can save it as-is
       // (instead of fetching a fresh pair and overwriting the user's intent).
       console.log('[verifySource] storing GPS into currentCoords + formData:', current);
@@ -1471,6 +1482,11 @@ const VehicleTrackingForm = ({ navigation, route }) => {
     try {
       const location = await getCurrentLocation('Start Trip Immediate');
       console.log('[StartTripToggle] defensive fetch result:', location);
+      if (location?.source === 'fallback') {
+        showToastMessage('GPS capture failed; starting without coords', 'warning');
+        setFormData(prev => ({ ...prev, startTrip: true }));
+        return;
+      }
       setFormData(prev => ({
         ...prev,
         startTrip: true,
@@ -2021,13 +2037,19 @@ const VehicleTrackingForm = ({ navigation, route }) => {
             showToastMessage('Capturing GPS location...', 'info');
             const location = await getCurrentLocation('Start Trip');
             console.log('[handleSubmit][start-trip] defensive fetch result:', location);
-            submitData = {
-              ...submitData,
-              start_trip: true,
-              start_latitude: location.latitude,
-              start_longitude: location.longitude,
-            };
-            showToastMessage(`GPS captured: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`, 'success');
+            if (location?.source === 'fallback') {
+              // Placeholder coords, not a real fix — start without GPS.
+              showToastMessage('GPS capture failed; starting without coords', 'warning');
+              submitData = { ...submitData, start_trip: true };
+            } else {
+              submitData = {
+                ...submitData,
+                start_trip: true,
+                start_latitude: location.latitude,
+                start_longitude: location.longitude,
+              };
+              showToastMessage(`GPS captured: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`, 'success');
+            }
           } catch (error) {
             console.error('[handleSubmit][start-trip] defensive fetch FAILED:', error?.message);
             showToastMessage('GPS capture failed, using default location', 'warning');
@@ -2061,6 +2083,8 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         try {
           showToastMessage('Capturing end location...', 'info');
           const location = await getCurrentLocation('End Trip');
+          // Placeholder coords → take the "end without coords" path below.
+          if (location?.source === 'fallback') throw new Error('no GPS fix');
           // Auto-stamp end time + computed travelled KM if user didn't fill them.
           const now = new Date();
           const startKmNum = parseInt(formData.startKM, 10) || 0;
@@ -2345,6 +2369,9 @@ const VehicleTrackingForm = ({ navigation, route }) => {
       const selectedVehicle = (dropdowns.vehicles || []).find(v => v.name === formData.vehicle);
       const fuelVehicleId = m2oId(existingTripData.vehicle_id) || selectedVehicle?._id || null;
       const fuelDriverId = m2oId(existingTripData.driver_id) || selectedVehicle?.driver?.id || null;
+      const fuelLat = formData.fuelLatitude || (currentCoords ? String(currentCoords.latitude) : '') || formData.start_latitude || '';
+      const fuelLng = formData.fuelLongitude || (currentCoords ? String(currentCoords.longitude) : '') || formData.start_longitude || '';
+      const fuelLocationName = fuelLat && fuelLng ? await getAddressFromCoords(fuelLat, fuelLng) : '';
       const log = await createFuelLogOdoo({
         tripId: existingTripData.id,
         vehicleId: fuelVehicleId,
@@ -2357,8 +2384,9 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         // Prepared base64 (preferred — bypasses URI-scheme guessing in createFuelLogOdoo).
         odometerImageBase64: formData.odometerImageBase64 || null,
         fuelInvoiceBase64: formData.fuelInvoiceBase64 || null,
-        gpsLat: formData.fuelLatitude || (currentCoords ? String(currentCoords.latitude) : '') || formData.start_latitude || '',
-        gpsLong: formData.fuelLongitude || (currentCoords ? String(currentCoords.longitude) : '') || formData.start_longitude || '',
+        gpsLat: fuelLat,
+        gpsLong: fuelLng,
+        gpsLocationName: fuelLocationName || undefined,
       });
       log.driver_name = existingTripData?.driver_name || formData.driver || '';
       console.log('[submitAddFuel] log returned — odometer_image len=',
@@ -2431,6 +2459,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
 
       try {
         const location = await getCurrentLocation();
+        if (location?.source === 'fallback') throw new Error('no GPS fix');
         cancelData.cancel_latitude = location.latitude;
         cancelData.cancel_longitude = location.longitude;
       } catch (error) {

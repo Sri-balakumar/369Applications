@@ -42,6 +42,26 @@ const cacheGet = async (kind, id) => {
   }
 };
 
+// HR removed this phone (or its PIN) in Odoo — drop every cached employee tied
+// to it so offline fingerprint / PIN can't keep verifying a removed device.
+const purgeDeviceCache = async (deviceId) => {
+  if (!deviceId) return;
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const pinKeys = keys.filter((k) => k.startsWith(_cacheKey('pin', '')));
+    const pinRows = pinKeys.length ? await AsyncStorage.multiGet(pinKeys) : [];
+    const stale = pinRows
+      .filter(([, raw]) => {
+        try { return JSON.parse(raw)?.deviceId === deviceId; } catch (_) { return false; }
+      })
+      .map(([k]) => k);
+    await AsyncStorage.multiRemove([_cacheKey('dev', deviceId), '@attCache:lastEmployee', ...stale]);
+    console.log('[AttCache] purged device cache', deviceId, 'pin entries:', stale.length);
+  } catch (e) {
+    console.warn('[AttCache] purge failed:', e?.message);
+  }
+};
+
 // "Network-like" error detector — same as in checkInByEmployeeId. Inlined as
 // a closure here so it stays defined regardless of where this file is loaded.
 const _isNetworkLikeErr = (error) => {
@@ -572,12 +592,14 @@ export const getEmployeeByDeviceId = async (deviceId, deviceName = null) => {
     console.log('[Attendance] Employees with devices:', employees.length);
 
     if (employees.length === 0) {
+      if (!empResponse.data?.error) await purgeDeviceCache(deviceId);
       return { success: false, error: 'No employees with registered devices found' };
     }
 
     // Collect all device IDs to fetch in one call
     const allDeviceIds = employees.flatMap((e) => e.device_ids || []);
     if (allDeviceIds.length === 0) {
+      if (!empResponse.data?.error) await purgeDeviceCache(deviceId);
       return { success: false, error: 'No device records found' };
     }
 
@@ -608,6 +630,7 @@ export const getEmployeeByDeviceId = async (deviceId, deviceName = null) => {
     if (!matchedDevice) {
       const inactiveMatch = devices.some((d) => d.device_id === deviceId && d.active === false);
       console.log('[Attendance] No active device record matches:', deviceId, 'inactiveMatch=', inactiveMatch);
+      if (!deviceResponse.data?.error) await purgeDeviceCache(deviceId);
       return {
         success: false,
         error: inactiveMatch
@@ -819,6 +842,7 @@ export const verifyEmployeePin = async (userId, enteredBadgeId, deviceId = null,
       const devOk = await _isDeviceRegisteredFor(employee.id, deviceId);
       if (!devOk) {
         console.log('[Attendance] PIN ok but device not registered for', employee.name);
+        await purgeDeviceCache(deviceId);
         return {
           success: false,
           error: `This phone isn't registered for ${employee.name}. Ask HR to register this device.`,
@@ -840,6 +864,10 @@ export const verifyEmployeePin = async (userId, enteredBadgeId, deviceId = null,
     }
 
     console.log('[Attendance] No employee found with Badge ID:', badgeId);
+    // PIN was removed/changed in Odoo — forget it so it can't work offline.
+    if (!response.data?.error) {
+      try { await AsyncStorage.removeItem(_cacheKey('pin', badgeId)); } catch (_) { /* ignore */ }
+    }
     return {
       success: false,
       error: 'No employee found with this Badge ID'

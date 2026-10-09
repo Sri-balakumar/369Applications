@@ -28,6 +28,12 @@ const fmtDateTime = (s) => (s ? (formatDateTimeOffice(s) || '—') : '—');
 
 const m2oLabel = (v) => (Array.isArray(v) ? (v[1] || '—') : (v || '—'));
 
+// "lat, lng" — trip coords are Char fields; blank/0 means not captured.
+const fmtGps = (lat, lng) => {
+  const ok = (v) => v !== '' && v != null && v !== false && Number(v) !== 0;
+  return ok(lat) || ok(lng) ? `${lat || '0'}, ${lng || '0'}` : '—';
+};
+
 const Row = ({ icon, label, value }) => (
   <View style={styles.row}>
     <MaterialIcons name={icon} size={14} color={FIELD_COLOR} />
@@ -89,6 +95,8 @@ const TripDetailSheet = ({ visible, trip, loading, onClose, onOpenInVehicleTrack
               <View style={styles.sectionGroup}>
                 <Row icon="schedule" label="Start" value={fmtDateTime(trip.start_time)} />
                 <Row icon="schedule" label="End" value={fmtDateTime(trip.end_time)} />
+                <Row icon="my-location" label="Start GPS" value={fmtGps(trip.start_latitude, trip.start_longitude)} />
+                <Row icon="my-location" label="End GPS" value={fmtGps(trip.end_latitude, trip.end_longitude)} />
               </View>
 
               <View style={styles.statsGrid}>
