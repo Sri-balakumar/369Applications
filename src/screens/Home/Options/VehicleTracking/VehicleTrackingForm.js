@@ -33,6 +33,7 @@ import { OverlayLoader } from '@components/Loader';
 import { cancelVehicleTrackingTripOdoo, fetchInvoiceByIdOdoo, fetchInvoiceByQrOdoo, createFuelLogOdoo } from '@api/services/generalApi';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StyledAlertModal } from '@components/Modal';
+import InAppCameraModal from '@components/Camera/InAppCameraModal';
 import { verifyWithinRadius, DEST_VERIFY_RADIUS_M } from '@utils/geoVerify';
 import { formatDateTimeOffice, getOfficeTimezone, hydrateOfficeTimezone } from '@utils/officeTime';
 // validation will be handled inline in this file to avoid stale state issues
@@ -434,9 +435,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
   // bitmap on OK that OOMs the bridge; expo-camera lets us control the
   // quality directly via takePictureAsync and skip the OK/Cancel screen.
   const [showInAppCamera, setShowInAppCamera] = useState(false);
-  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const [cameraTarget, setCameraTarget] = useState(null); // 'trip' | 'fuel' | 'odometer'
-  const inAppCameraRef = useRef(null);
   // Lightbox state — full-screen preview of any image (trip, odometer, fuel invoice)
   const [previewImageUri, setPreviewImageUri] = useState(null);
   // Fuel-log View popup — shows full details + thumbnails for one log row.
@@ -966,7 +965,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
   // Unified in-app camera opener (replaces ImagePicker.launchCameraAsync,
   // which builds a full-resolution bitmap on OK and OOMs the bridge). The
   // target ('trip' | 'fuel' | 'odometer') decides which form field receives
-  // the captured URI in captureFromInAppCamera below.
+  // the captured URI in handleInAppCapture below.
   const openInAppCamera = async (target) => {
     try {
       const { status } = await Camera.requestCameraPermissionsAsync();
@@ -982,18 +981,11 @@ const VehicleTrackingForm = ({ navigation, route }) => {
     }
   };
 
-  // Capture handler — runs when the in-app camera shutter is tapped. Saves
-  // immediately, no OK/Cancel screen.
-  const captureFromInAppCamera = async () => {
-    if (isCapturingPhoto || !inAppCameraRef.current) return;
-    setIsCapturingPhoto(true);
+  // Capture handler — InAppCameraModal calls this with the photo once the
+  // shutter is tapped (it handles readiness / timeouts). Saves immediately,
+  // no OK/Cancel screen.
+  const handleInAppCapture = async (photo) => {
     try {
-      const photo = await inAppCameraRef.current.takePictureAsync({
-        quality: 0.3,
-        skipProcessing: true,
-        exif: false,
-        base64: true,                      // capture base64 alongside URI for upload
-      });
       console.log('[VehicleTrackingForm] in-app camera captured:', photo?.uri);
       setShowInAppCamera(false);
       // Yield so the camera native view tears down before we mutate state.
@@ -1022,8 +1014,6 @@ const VehicleTrackingForm = ({ navigation, route }) => {
       console.error('[VehicleTrackingForm] in-app camera capture error:', e?.message);
       showToastMessage('Capture failed', 'error');
       setShowInAppCamera(false);
-    } finally {
-      setIsCapturingPhoto(false);
     }
   };
 
@@ -3689,48 +3679,17 @@ const VehicleTrackingForm = ({ navigation, route }) => {
 
       {/* In-app camera — replaces ImagePicker.launchCameraAsync to avoid the
           OOM crash when OK is tapped on a full-resolution OS preview. Capture
-          is one-tap (shutter only), no Cancel/OK overlay. */}
-      <Modal
+          is one-tap (shutter only), no Cancel/OK overlay. InAppCameraModal
+          waits for the camera to be ready and recovers a black preview. */}
+      <InAppCameraModal
         visible={showInAppCamera}
-        animationType="slide"
-        onRequestClose={() => setShowInAppCamera(false)}
-      >
-        <View style={styles.cameraModalContainer}>
-          <Camera
-            ref={inAppCameraRef}
-            style={styles.cameraView}
-            type={Camera.Constants.Type.back}
-          >
-            <View style={styles.cameraOverlay}>
-              <View style={styles.cameraTopBar}>
-                <TouchableOpacity
-                  style={styles.cameraCloseBtn}
-                  onPress={() => setShowInAppCamera(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <MaterialCommunityIcons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.cameraTitle}>
-                  {cameraTarget === 'fuel'     ? 'Fuel Invoice'
-                  : cameraTarget === 'odometer' ? 'Odometer Image'
-                  :                               'Trip Photo'}
-                </Text>
-                <View style={{ width: 40 }} />
-              </View>
-              <View style={styles.cameraBottomBar}>
-                <TouchableOpacity
-                  style={[styles.cameraShutterBtn, isCapturingPhoto && { opacity: 0.4 }]}
-                  onPress={captureFromInAppCamera}
-                  disabled={isCapturingPhoto}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cameraShutterInner} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Camera>
-        </View>
-      </Modal>
+        title={cameraTarget === 'fuel'     ? 'Fuel Invoice'
+             : cameraTarget === 'odometer' ? 'Odometer Image'
+             :                               'Trip Photo'}
+        captureOptions={{ quality: 0.3, skipProcessing: true, exif: false, base64: true }}
+        onCapture={handleInAppCapture}
+        onClose={() => setShowInAppCamera(false)}
+      />
 
       {/* Full-screen image preview (lightbox). Tap anywhere to dismiss. */}
       <Modal

@@ -11,6 +11,7 @@ import { NavigationHeader } from '@components/Header';
 import { SafeAreaView } from '@components/containers';
 import OfflineBanner from '@components/common/OfflineBanner';
 import StyledAlertModal from '@components/Modal/StyledAlertModal';
+import InAppCameraModal from '@components/Camera/InAppCameraModal';
 import { TextInput as FormInput } from '@components/common/TextInput';
 import { LoadingButton } from '@components/common/Button';
 import Text from '@components/Text';
@@ -70,8 +71,6 @@ const VehicleMaintenanceForm = ({ navigation, route }) => {
   const [previewImageUri, setPreviewImageUri] = useState(null);
   const [imagePickerVisible, setImagePickerVisible] = useState(false);
   const [showInAppCamera, setShowInAppCamera] = useState(false);
-  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
-  const inAppCameraRef = useRef(null);
   const signatureRef = useRef(null);
 
   // Validate-confirm popup state for the admin Validate button.
@@ -192,26 +191,12 @@ const VehicleMaintenanceForm = ({ navigation, route }) => {
     }
   };
 
-  const captureFromInAppCamera = async () => {
-    if (!inAppCameraRef.current || isCapturingPhoto) return;
-    try {
-      setIsCapturingPhoto(true);
-      const photo = await inAppCameraRef.current.takePictureAsync({
-        quality: 0.3,
-        skipProcessing: true,
-        exif: false,
-      });
-      setShowInAppCamera(false);
-      if (photo?.uri) {
-        handleInputChange('imageUri', photo.uri);
-        showToastMessage('Image captured successfully!', 'success');
-      }
-    } catch (e) {
-      console.error('takePictureAsync exception:', e);
-      showToastMessage('Camera error occurred', 'error');
-    } finally {
-      setIsCapturingPhoto(false);
-    }
+  // InAppCameraModal hands over the photo once captured (it handles
+  // readiness / timeouts).
+  const handleInAppCapture = (photo) => {
+    setShowInAppCamera(false);
+    handleInputChange('imageUri', photo.uri);
+    showToastMessage('Image captured successfully!', 'success');
   };
 
   const openGallery = () => {
@@ -759,41 +744,13 @@ const VehicleMaintenanceForm = ({ navigation, route }) => {
       </Modal>
 
       {/* Inline in-app camera (no OS preview screen — matches Customer Visit flow). */}
-      <Modal
+      <InAppCameraModal
         visible={showInAppCamera}
-        animationType="slide"
-        onRequestClose={() => setShowInAppCamera(false)}
-      >
-        <View style={styles.cameraModalContainer}>
-          <Camera
-            ref={inAppCameraRef}
-            style={styles.cameraView}
-            type={Camera.Constants.Type.back}
-          >
-            <View style={styles.cameraOverlay}>
-              <View style={styles.cameraTopBar}>
-                <TouchableOpacity
-                  style={styles.cameraCloseBtn}
-                  onPress={() => setShowInAppCamera(false)}
-                >
-                  <MaterialCommunityIcons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.cameraTitle}>Take Photo</Text>
-                <View style={{ width: 40 }} />
-              </View>
-              <View style={styles.cameraBottomBar}>
-                <TouchableOpacity
-                  style={[styles.cameraShutterBtn, isCapturingPhoto && { opacity: 0.4 }]}
-                  onPress={captureFromInAppCamera}
-                  disabled={isCapturingPhoto}
-                >
-                  <View style={styles.cameraShutterInner} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Camera>
-        </View>
-      </Modal>
+        title="Take Photo"
+        captureOptions={{ quality: 0.3, skipProcessing: true, exif: false }}
+        onCapture={handleInAppCapture}
+        onClose={() => setShowInAppCamera(false)}
+      />
 
       {/* Branded Camera / Gallery / Cancel picker (matches logout-style popup). */}
       <StyledAlertModal

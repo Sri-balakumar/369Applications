@@ -51,6 +51,7 @@ import * as offlineQueue from '@utils/offlineQueue';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { Camera } from 'expo-camera';
+import { useCameraReadyWatchdog, withTimeout } from '@components/Camera/InAppCameraModal';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Application from 'expo-application';
 import { toShortDeviceCode } from '@utils/shortDeviceId';
@@ -323,6 +324,9 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   const [countdown, setCountdown] = useState(3);
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef(null);
+  // Selfie camera readiness: the countdown only runs once the preview is
+  // live; a camera that never starts is remounted, then offered a Retry.
+  const selfieCam = useCameraReadyWatchdog(showCamera);
 
   // Single styled alert modal state for all in-screen confirmations/errors.
   // Use showAlert({ message, confirmText?, cancelText?, destructive?, onConfirm?, onCancel? })
@@ -1500,18 +1504,25 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     ])
   );
 
-  // Camera countdown and auto-capture
+  // Restart the countdown whenever the camera isn't live (first open,
+  // auto-remount, retry) so the photo is never taken of a black preview.
+  useEffect(() => {
+    if (showCamera && !selfieCam.ready) setCountdown(3);
+  }, [showCamera, selfieCam.ready]);
+
+  // Camera countdown and auto-capture — only once the preview is ready.
   useEffect(() => {
     let timer;
-    if (showCamera && countdown > 0) {
+    if (!showCamera || !selfieCam.ready) return undefined;
+    if (countdown > 0) {
       timer = setTimeout(() => {
         setCountdown(countdown - 1);
       }, 1000);
-    } else if (showCamera && countdown === 0 && !isCapturing) {
+    } else if (countdown === 0 && !isCapturing) {
       capturePhoto();
     }
     return () => clearTimeout(timer);
-  }, [showCamera, countdown, isCapturing]);
+  }, [showCamera, countdown, isCapturing, selfieCam.ready]);
 
   const openCamera = async (type) => {
     if (!cameraPermission?.granted) {
@@ -1538,11 +1549,23 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     if (isCapturing || !cameraRef.current) return;
 
     setIsCapturing(true);
+    let photo;
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
-        base64: true,
-      });
+      photo = await withTimeout(
+        cameraRef.current.takePictureAsync({ quality: 0.7, base64: true }),
+        8000,
+        'selfie takePictureAsync',
+      );
+    } catch (e) {
+      // Capture hung or failed — restart the camera and the countdown
+      // instead of leaving the screen stuck on "Capturing...".
+      console.warn('[Attendance] selfie capture failed:', e?.message);
+      showToastMessage("Couldn't take photo, retrying…");
+      setIsCapturing(false);
+      selfieCam.remount('selfie capture failed');
+      return;
+    }
+    try {
 
       console.log('[Attendance] Photo captured, size:', photo.base64?.length);
       closeCamera();
@@ -4708,9 +4731,11 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       >
         <View style={styles.cameraContainer}>
           <Camera
+            key={selfieCam.mountKey}
             ref={cameraRef}
             style={styles.camera}
             type={Camera.Constants.Type.front}
+            {...selfieCam.cameraProps}
           >
             <View style={styles.cameraOverlay}>
               <View style={styles.cameraHeader}>
@@ -4737,7 +4762,25 @@ const UserAttendanceScreen = ({ navigation, route }) => {
               </View>
 
               <View style={styles.countdownContainer}>
-                {countdown > 0 ? (
+                {!selfieCam.ready ? (
+                  selfieCam.failed ? (
+                    <>
+                      <MaterialIcons name="videocam-off" size={scale(48)} color={COLORS.white} />
+                      <Text style={styles.countdownText}>Camera didn't start</Text>
+                      <TouchableOpacity
+                        onPress={selfieCam.retry}
+                        style={{ marginTop: 12, backgroundColor: '#fff', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 22 }}
+                      >
+                        <Text style={{ color: '#000', fontWeight: '700' }}>Retry</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <ActivityIndicator size="large" color={COLORS.white} />
+                      <Text style={styles.countdownText}>Starting camera…</Text>
+                    </>
+                  )
+                ) : countdown > 0 ? (
                   <>
                     <Text style={styles.countdownNumber}>{countdown}</Text>
                     <Text style={styles.countdownText}>Taking photo in...</Text>

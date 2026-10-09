@@ -14,6 +14,7 @@ import * as ImageManipulator from 'expo-image-manipulator'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Location from 'expo-location'
 import { getAddressFromCoords } from '@utils/addressFromCoords'
+import InAppCameraModal from '@components/Camera/InAppCameraModal'
 import * as FileSystem from 'expo-file-system'
 import { Audio } from 'expo-av'
 import MapView, { Marker } from 'react-native-maps'
@@ -71,8 +72,6 @@ const VisitForm = ({ navigation, route }) => {
   const [voiceUri, setVoiceUri] = useState(null);
   // In-app camera modal — replaces the crashy OS launchCameraAsync.
   const [showInAppCamera, setShowInAppCamera] = useState(false);
-  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
-  const visitCameraRef = useRef(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingRef = useRef(null);
   const timerRef = useRef(null);
@@ -510,18 +509,10 @@ const VisitForm = ({ navigation, route }) => {
     }
   };
 
-  // Called by the in-app camera's capture button. Takes a low-quality picture
-  // straight to disk via expo-camera, closes the modal, resizes, commits.
-  const captureFromInAppCamera = async () => {
-    if (isCapturingPhoto || !visitCameraRef.current) return;
-    setIsCapturingPhoto(true);
+  // Called by InAppCameraModal with the low-quality picture (it handles
+  // readiness / timeouts). Closes the modal, resizes, commits.
+  const handleInAppCapture = async (photo) => {
     try {
-      console.log('[cam] step A — takePictureAsync starting');
-      const photo = await visitCameraRef.current.takePictureAsync({
-        quality: 0.3,
-        skipProcessing: true,
-        exif: false,
-      });
       console.log('[cam] step B — captured uri:', photo?.uri, 'size:', photo?.width + 'x' + photo?.height);
       setShowInAppCamera(false);
       // Yield so the camera native view tears down before we start resize.
@@ -540,8 +531,6 @@ const VisitForm = ({ navigation, route }) => {
       console.log('[cam] FATAL capture error:', e?.message, e?.stack);
       showToast({ type: 'error', title: 'Capture failed', message: e?.message });
       setShowInAppCamera(false);
-    } finally {
-      setIsCapturingPhoto(false);
     }
   };
   const pickImageFromGallery = async () => {
@@ -1247,40 +1236,13 @@ const VisitForm = ({ navigation, route }) => {
       </RoundedScrollContainer>
 
       {/* In-app camera — replaces OS launchCameraAsync to avoid OOM crash */}
-      <Modal visible={showInAppCamera} animationType="slide" onRequestClose={() => setShowInAppCamera(false)}>
-        <View style={styles.cameraModalContainer}>
-          <Camera
-            ref={visitCameraRef}
-            style={styles.cameraView}
-            type={Camera.Constants.Type.back}
-          >
-            <View style={styles.cameraOverlay}>
-              <View style={styles.cameraTopBar}>
-                <TouchableOpacity
-                  style={styles.cameraCloseBtn}
-                  onPress={() => setShowInAppCamera(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <MaterialIcons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.cameraTitle}>Take Photo</Text>
-                <View style={{ width: 40 }} />
-              </View>
-
-              <View style={styles.cameraBottomBar}>
-                <TouchableOpacity
-                  style={[styles.cameraShutterBtn, isCapturingPhoto && { opacity: 0.4 }]}
-                  onPress={captureFromInAppCamera}
-                  disabled={isCapturingPhoto}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cameraShutterInner} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Camera>
-        </View>
-      </Modal>
+      <InAppCameraModal
+        visible={showInAppCamera}
+        title="Take Photo"
+        captureOptions={{ quality: 0.3, skipProcessing: true, exif: false }}
+        onCapture={handleInAppCapture}
+        onClose={() => setShowInAppCamera(false)}
+      />
 
       <OverlayLoader visible={isLoading} />
     </SafeAreaView>

@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
 import { StyledAlertModal } from '@components/Modal';
+import InAppCameraModal from '@components/Camera/InAppCameraModal';
 import { createFuelLogOdoo } from '@api/services/generalApi';
 
 const FIELD_COLOR = '#1976D2';
@@ -54,8 +55,6 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
 
   // In-app camera (expo-camera) — one-tap shutter, no OS OK step.
   const [showInAppCamera, setShowInAppCamera] = useState(false);
-  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
-  const inAppCameraRef = useRef(null);
 
   // Reset on open + silent GPS capture (any-age cache so it's instant).
   // Live Balanced refresh is skipped when the cache already produced a fix.
@@ -139,36 +138,23 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
         return;
       }
       setSourcePickerTarget(target);  // remember the target until capture lands
-      // tiny delay so the source-picker modal fully dismisses before the
-      // camera modal mounts — avoids the Android nested-modal flicker.
-      setTimeout(() => setShowInAppCamera(true), 80);
+      // Wait for the source-picker modal's dismiss animation to finish before
+      // the camera modal opens — opening mid-animation left the Android
+      // camera preview black.
+      setTimeout(() => setShowInAppCamera(true), 350);
     } catch (e) {
       console.error(TAG, 'openInAppCamera error:', e?.message);
     }
   };
 
-  const captureFromInAppCamera = async () => {
-    if (isCapturingPhoto || !inAppCameraRef.current) return;
-    setIsCapturingPhoto(true);
-    try {
-      const photo = await inAppCameraRef.current.takePictureAsync({
-        quality: 0.3,
-        skipProcessing: true,
-        exif: false,
-        base64: true,
-      });
-      console.log(TAG, 'in-app camera captured:', photo?.uri);
-      setShowInAppCamera(false);
-      // yield so the camera native view tears down before state mutates
-      await new Promise((r) => setTimeout(r, 100));
-      if (photo?.uri) setImage(sourcePickerTarget, photo.uri, photo.base64 || '');
-      setSourcePickerTarget(null);
-    } catch (e) {
-      console.error(TAG, 'capture failed:', e?.message);
-      setShowInAppCamera(false);
-    } finally {
-      setIsCapturingPhoto(false);
-    }
+  // InAppCameraModal handles readiness / timeouts; we just store the photo.
+  const handleInAppCapture = async (photo) => {
+    console.log(TAG, 'in-app camera captured:', photo?.uri);
+    setShowInAppCamera(false);
+    // yield so the camera native view tears down before state mutates
+    await new Promise((r) => setTimeout(r, 100));
+    setImage(sourcePickerTarget, photo.uri, photo.base64 || '');
+    setSourcePickerTarget(null);
   };
 
   const launchGallery = async (target) => {
@@ -336,45 +322,13 @@ const AddFuelSheet = ({ visible, trip, onClose, onSaved }) => {
       />
 
       {/* In-app camera — one-tap shutter, no OS OK step. */}
-      <Modal
+      <InAppCameraModal
         visible={showInAppCamera}
-        animationType="slide"
-        onRequestClose={() => setShowInAppCamera(false)}
-      >
-        <View style={styles.cameraModalContainer}>
-          <Camera
-            ref={inAppCameraRef}
-            style={styles.cameraView}
-            type={Camera.Constants.Type.back}
-          >
-            <View style={styles.cameraOverlay}>
-              <View style={styles.cameraTopBar}>
-                <TouchableOpacity
-                  style={styles.cameraCloseBtn}
-                  onPress={() => setShowInAppCamera(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <MaterialCommunityIcons name="close" size={28} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.cameraTitle}>
-                  {sourcePickerTarget === 'fuel' ? 'Fuel Invoice' : 'Odometer Image'}
-                </Text>
-                <View style={{ width: 40 }} />
-              </View>
-              <View style={styles.cameraBottomBar}>
-                <TouchableOpacity
-                  style={[styles.cameraShutterBtn, isCapturingPhoto && { opacity: 0.4 }]}
-                  onPress={captureFromInAppCamera}
-                  disabled={isCapturingPhoto}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cameraShutterInner} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Camera>
-        </View>
-      </Modal>
+        title={sourcePickerTarget === 'fuel' ? 'Fuel Invoice' : 'Odometer Image'}
+        captureOptions={{ quality: 0.3, skipProcessing: true, exif: false, base64: true }}
+        onCapture={handleInAppCapture}
+        onClose={() => { setShowInAppCamera(false); setSourcePickerTarget(null); }}
+      />
 
       {/* Full-screen image preview (lightbox). Tap anywhere to dismiss. */}
       <Modal
