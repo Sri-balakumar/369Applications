@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker'
 import * as ImageManipulator from 'expo-image-manipulator'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Location from 'expo-location'
+import { getAddressFromCoords } from '@utils/addressFromCoords'
 import * as FileSystem from 'expo-file-system'
 import { Audio } from 'expo-av'
 import MapView, { Marker } from 'react-native-maps'
@@ -272,18 +273,8 @@ const VisitForm = ({ navigation, route }) => {
       const lat = location.coords.latitude;
       const lng = location.coords.longitude;
 
-      // Reverse geocode to get location name
-      let locationName = '';
-      try {
-        const reverseGeocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-        if (reverseGeocode && reverseGeocode.length > 0) {
-          const place = reverseGeocode[0];
-          const parts = [place.name, place.street, place.city, place.region, place.country].filter(Boolean);
-          locationName = parts.join(', ');
-        }
-      } catch (geoError) {
-        console.error('[VisitForm] reverse geocode error:', geoError);
-      }
+      // Reverse geocode to a real street address (street, colony, city…).
+      const locationName = await getAddressFromCoords(lat, lng);
 
       setFormData(prev => ({
         ...prev,
@@ -305,14 +296,7 @@ const VisitForm = ({ navigation, route }) => {
             const fLat = fresh.coords.latitude;
             const fLng = fresh.coords.longitude;
             console.log('[VisitForm] background Balanced upgrade:', fLat, fLng);
-            let fName = '';
-            try {
-              const rg = await Location.reverseGeocodeAsync({ latitude: fLat, longitude: fLng });
-              if (rg && rg.length > 0) {
-                const p = rg[0];
-                fName = [p.name, p.street, p.city, p.region, p.country].filter(Boolean).join(', ');
-              }
-            } catch (_) { /* leave name as-is */ }
+            const fName = await getAddressFromCoords(fLat, fLng);
             setFormData(prev => ({
               ...prev,
               latitude: fLat,

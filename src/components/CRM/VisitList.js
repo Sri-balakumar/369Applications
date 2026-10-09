@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import Text from '@components/Text';
 import { COLORS, FONT_FAMILY } from '@constants/theme';
 import { formatDate, formatDateTime } from '@utils/common/date';
@@ -58,9 +59,17 @@ const VisitList = ({ item, onPress }) => {
           </Text>
         </View>
       </View>
-      <View style={styles.rightColumn}>
-        <Text style={styles.content}>{item?.location_name || item?.purpose?.name || '-'}</Text>
-      </View>
+      {item?.purpose?.name ? (
+        <View style={styles.rightColumn}>
+          <Text style={styles.content}>{item.purpose.name}</Text>
+        </View>
+      ) : null}
+      {item?.location_name ? (
+        <View style={styles.addressRow}>
+          <MaterialIcons name="place" size={16} color={COLORS.primaryThemeColor} style={{ marginTop: 1 }} />
+          <Text style={styles.addressText} numberOfLines={2}>{item.location_name}</Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 };
@@ -133,7 +142,19 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.urbanistSemiBold,
     textTransform:'capitalize'
   },
- 
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 2,
+  },
+  addressText: {
+    flex: 1,
+    marginLeft: 4,
+    color: '#444444',
+    fontSize: 13,
+    fontFamily: FONT_FAMILY.urbanistMedium,
+  },
+
   contentRight: {
     color: '#666666',
     fontFamily: FONT_FAMILY.urbanistSemiBold,
