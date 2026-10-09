@@ -1,6 +1,6 @@
 {
     'name': 'Employee Device Management',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.0.1',
     'category': 'Human Resources/Attendance',
     'summary': 'Register and manage employee devices for attendance verification',
     'description': """

@@ -1,10 +1,49 @@
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class HrEmployee(models.Model):
     _inherit = 'hr.employee'
 
     device_ids = fields.One2many('employee.device', 'employee_id', string='Devices')
+
+    # Live red warning under the PIN field when another employee already uses
+    # the same PIN (the phone app logs in by PIN, so PINs must be unique).
+    pin_conflict_msg = fields.Char(
+        compute='_compute_pin_conflict_msg',
+        store=False,
+    )
+
+    def _pin_owner(self, pin):
+        """Another employee (any company) already using `pin`, if any."""
+        self.ensure_one()
+        pin = (pin or '').strip()
+        if not pin:
+            return self.browse()
+        return self.sudo().search(
+            [('pin', '=', pin), ('id', '!=', self._origin.id or 0)], limit=1)
+
+    def _pin_conflict_text(self, owner):
+        return _("%s is already using this PIN. Please keep a different PIN.", owner.name)
+
+    @api.depends('pin')
+    def _compute_pin_conflict_msg(self):
+        for emp in self:
+            owner = emp._pin_owner(emp.pin)
+            emp.pin_conflict_msg = emp._pin_conflict_text(owner) if owner else False
+
+    @api.constrains('pin')
+    def _check_unique_pin(self):
+        for emp in self:
+            # A PIN is only usable from a registered phone, so the Device ID
+            # must exist first. Runs after the device_code inverse, so entering
+            # Device ID + PIN together in one save is fine.
+            if (emp.pin or '').strip() and not emp._primary_device():
+                raise ValidationError(_(
+                    "Enter the Device ID for %s before setting a PIN.", emp.name))
+            owner = emp._pin_owner(emp.pin)
+            if owner:
+                raise ValidationError(emp._pin_conflict_text(owner))
 
     # Single editable view of the employee's device, surfaced so the
     # Attendances → Devices list shows one row per employee

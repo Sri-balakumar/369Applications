@@ -11,7 +11,16 @@
                 <page string="Devices" name="devices">
                     <group>
                         <group string="PIN Authentication">
-                            <field name="pin" string="PIN" password="True"/>
+                            <!-- PIN unlocks only once a Device ID is registered
+                                 (Attendances → Devices). -->
+                            <field name="device_code" invisible="1"/>
+                            <field name="pin" string="PIN" password="True" readonly="not device_code"/>
+                            <div class="text-muted fst-italic" colspan="2" invisible="device_code">
+                                Register the Device ID first (Attendances → Devices) to set a PIN.
+                            </div>
+                            <div class="text-danger fw-bold" colspan="2" invisible="not pin_conflict_msg">
+                                <field name="pin_conflict_msg" nolabel="1" readonly="1"/>
+                            </div>
                         </group>
                     </group>
                     <separator string="Registered Devices"/>
@@ -73,7 +82,14 @@
                             <field name="device_code"/>
                             <field name="device_name" readonly="1"/>
                             <field name="device_active" widget="boolean_toggle"/>
-                            <field name="pin"/>
+                            <!-- PIN stays locked until the Device ID is entered. -->
+                            <field name="pin" readonly="not device_code"/>
+                            <div class="text-muted fst-italic" colspan="2" invisible="device_code">
+                                Enter the Device ID first, then set the PIN.
+                            </div>
+                            <div class="text-danger fw-bold" colspan="2" invisible="not pin_conflict_msg">
+                                <field name="pin_conflict_msg" nolabel="1" readonly="1"/>
+                            </div>
                             <field name="device_added_date" readonly="1"/>
                             <field name="device_last_used" readonly="1"/>
                         </group>

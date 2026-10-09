@@ -963,8 +963,9 @@ class HrAttendance(models.Model):
                 continue
             # 1. End the last open trip
             if rec.trip_line_ids:
-                last_line = rec.trip_line_ids.sorted('sequence', reverse=True)[:1]
-                last_trip = last_line.trip_id
+                # _last_trip_line breaks the shared sequence=10 tie by id —
+                # a plain sequence sort returned the FIRST line here.
+                last_trip = rec._last_trip_line().trip_id
             else:
                 last_trip = rec.source_trip_id
             if last_trip and not last_trip.end_trip and not last_trip.trip_cancel:
@@ -1408,9 +1409,11 @@ class HrAttendance(models.Model):
         }
 
     @api.model
-    def field_action_close_previous_trip(self, attendance_id, end_km):
+    def field_action_close_previous_trip(self, attendance_id, end_km,
+                                         end_latitude=None, end_longitude=None):
         """Close the latest open trip on this attendance. End KM must be
-        > Start KM. Mirrors the web close-previous-trip dialog."""
+        > Start KM. Mirrors the web close-previous-trip dialog. The app sends
+        the phone's GPS at close time as end_latitude / end_longitude."""
         # Let an "Over" trip end here; the mobile app prompts for the
         # deviation reason right after (the constraint stays enforced on the web).
         self = self.with_context(skip_deviation_reason_required=True)
@@ -1437,11 +1440,13 @@ class HrAttendance(models.Model):
         # fire during a later flush and roll back the whole write — leaving
         # end_trip unset (the "trip never ends" bug).
         trip = trip.with_context(skip_deviation_reason_required=True, skip_auto_end_trip=True)
-        trip.write({
+        vals = {
             'end_km': end_km_int,
             'end_trip': True,
             'end_time': trip.end_time or fields.Datetime.now(),
-        })
+        }
+        vals.update(trip._end_gps_vals(end_latitude, end_longitude))
+        trip.write(vals)
         trip.flush_recordset()
         try:
             trip._mark_linked_visits_done()

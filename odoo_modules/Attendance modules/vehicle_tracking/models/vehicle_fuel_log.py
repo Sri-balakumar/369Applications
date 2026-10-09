@@ -55,10 +55,40 @@ class VehicleFuelLog(models.Model):
         readonly=True
     )
 
+    @api.onchange('vehicle_tracking_id')
+    def _onchange_vehicle_tracking_id(self):
+        """Pre-fill vehicle + driver from the trip (driver falls back to the
+        vehicle's assigned driver when the trip has none)."""
+        trip = self.vehicle_tracking_id
+        if not trip:
+            return
+        if not self.vehicle_id and trip.vehicle_id:
+            self.vehicle_id = trip.vehicle_id
+        if not self.driver_id:
+            self.driver_id = trip.driver_id or self.vehicle_id.driver_id
+
+    def _fill_from_trip(self, vals):
+        """Fill missing vehicle_id / driver_id from the linked trip so a fuel
+        log can be added to a trip that was saved without a driver (vehicle
+        and driver are optional on vehicle.tracking but required here).
+        Driver falls back to the vehicle's assigned driver."""
+        if vals.get('vehicle_id') and vals.get('driver_id'):
+            return
+        trip = self.env['vehicle.tracking'].browse(vals.get('vehicle_tracking_id') or [])
+        trip = trip.exists()
+        if not vals.get('vehicle_id') and trip.vehicle_id:
+            vals['vehicle_id'] = trip.vehicle_id.id
+        if not vals.get('driver_id'):
+            vehicle = self.env['fleet.vehicle'].browse(vals.get('vehicle_id') or []).exists()
+            driver = trip.driver_id or vehicle.driver_id
+            if driver:
+                vals['driver_id'] = driver.id
+
     @api.model_create_multi
     def create(self, vals_list):
         """Auto sequence for reference + auto-set image filenames."""
         for vals in vals_list:
+            self._fill_from_trip(vals)
             if vals.get('name', 'New') == 'New':
                 vals['name'] = self.env['ir.sequence'].next_by_code('vehicle.fuel.log') or 'New'
             if vals.get('odometer_image') and not vals.get('odometer_image_filename'):

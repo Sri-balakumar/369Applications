@@ -72,6 +72,37 @@ class FieldAttendanceTripLine(models.Model):
                     lng = '%.7f' % float(src.longitude)
             rec.gps_latitude = lat
             rec.gps_longitude = lng
+
+    # End GPS — where the trip finished. The trip's own end coords (captured
+    # by the app at End Trip / close-previous-trip / checkout) win; otherwise
+    # the destination location picked on the map. Return-home legs have no
+    # customer.visit, so this is the only place their arrival point shows.
+    end_gps_latitude = fields.Char(
+        compute='_compute_end_gps_from_trip',
+        string='End Latitude', readonly=True,
+    )
+    end_gps_longitude = fields.Char(
+        compute='_compute_end_gps_from_trip',
+        string='End Longitude', readonly=True,
+    )
+
+    @api.depends(
+        'trip_id', 'trip_id.end_latitude', 'trip_id.end_longitude',
+        'trip_id.destination_id', 'trip_id.destination_id.latitude',
+        'trip_id.destination_id.longitude',
+    )
+    def _compute_end_gps_from_trip(self):
+        for rec in self:
+            lat = rec.trip_id.end_latitude or ''
+            lng = rec.trip_id.end_longitude or ''
+            if not lat and not lng and rec.trip_id.destination_id:
+                dst = rec.trip_id.destination_id
+                if dst.latitude:
+                    lat = '%.7f' % float(dst.latitude)
+                if dst.longitude:
+                    lng = '%.7f' % float(dst.longitude)
+            rec.end_gps_latitude = lat
+            rec.end_gps_longitude = lng
     # Source + destination location of the trip — replaces the old
     # "Visited Stops" line on the kanban cards.
     source_location = fields.Char(

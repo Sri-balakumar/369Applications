@@ -391,11 +391,6 @@
                                 <field name="source_trip_destination_location" readonly="1"/>
                                 <field name="trip_total_km"
                                        string="KM Travelled" readonly="1"/>
-                            </group>
-                            <group>
-                                <field name="gps_latitude"/>
-                                <field name="gps_longitude"/>
-                                <field name="gps_location_name"/>
                                 <field name="trip_total_duration"
                                        string="Duration (Hrs)" widget="float_time" readonly="1"/>
                             </group>
@@ -458,6 +453,8 @@
                                 <field name="trip_id"/>
                                 <field name="gps_latitude"/>
                                 <field name="gps_longitude"/>
+                                <field name="end_gps_latitude"/>
+                                <field name="end_gps_longitude"/>
                                 <field name="km_travelled"/>
                                 <field name="duration"/>
                                 <field name="source_location"/>
@@ -489,6 +486,8 @@
                                                         <div><strong>Duration (Hrs): </strong><field name="duration" widget="float_time"/></div>
                                                         <div><strong>GPS Latitude: </strong><field name="gps_latitude"/></div>
                                                         <div><strong>GPS Longitude: </strong><field name="gps_longitude"/></div>
+                                                        <div><strong>End Latitude: </strong><field name="end_gps_latitude"/></div>
+                                                        <div><strong>End Longitude: </strong><field name="end_gps_longitude"/></div>
                                                     </div>
                                                 </div>
                                                 <!-- RIGHT: Visit Details (border-left so the divider extends with the taller column) -->
@@ -569,6 +568,10 @@
                                             <field name="gps_latitude" readonly="1"
                                                    invisible="not trip_id"/>
                                             <field name="gps_longitude" readonly="1"
+                                                   invisible="not trip_id"/>
+                                            <field name="end_gps_latitude" readonly="1"
+                                                   invisible="not trip_id"/>
+                                            <field name="end_gps_longitude" readonly="1"
                                                    invisible="not trip_id"/>
                                         </group>
                                     </group>
@@ -660,6 +663,8 @@
                                 <field name="trip_id"/>
                                 <field name="gps_latitude"/>
                                 <field name="gps_longitude"/>
+                                <field name="end_gps_latitude"/>
+                                <field name="end_gps_longitude"/>
                                 <field name="km_travelled"/>
                                 <field name="duration"/>
                                 <field name="source_location"/>
@@ -690,6 +695,8 @@
                                                         <div><strong>Duration (Hrs): </strong><field name="duration" widget="float_time"/></div>
                                                         <div><strong>GPS Latitude: </strong><field name="gps_latitude"/></div>
                                                         <div><strong>GPS Longitude: </strong><field name="gps_longitude"/></div>
+                                                        <div><strong>End Latitude: </strong><field name="end_gps_latitude"/></div>
+                                                        <div><strong>End Longitude: </strong><field name="end_gps_longitude"/></div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -736,6 +743,8 @@
                                         <group>
                                             <field name="gps_latitude" readonly="1" invisible="not trip_id"/>
                                             <field name="gps_longitude" readonly="1" invisible="not trip_id"/>
+                                            <field name="end_gps_latitude" readonly="1" invisible="not trip_id"/>
+                                            <field name="end_gps_longitude" readonly="1" invisible="not trip_id"/>
                                         </group>
                                     </group>
                                     <group colspan="2" invisible="not trip_id">

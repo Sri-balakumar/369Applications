@@ -102,7 +102,25 @@ class VehicleTracking(models.Model):
         return {'success': True, 'trip_check_status': self.trip_check_status}
 
     @api.model
-    def field_end_trip(self, trip_id, end_km=None, end_time=None):
+    def _end_gps_vals(self, end_latitude=None, end_longitude=None):
+        """Vals for the trip's end GPS sent by the mobile app when it closes a
+        trip outside the Vehicle Tracking form (close-previous-trip / checkout).
+        Stored as strings like start_latitude. Skipped when either side is
+        missing or 0 so a failed GPS fix never blanks the trip."""
+        def _fmt(v):
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None
+            return ('%.7f' % f) if f else None
+        lat, lng = _fmt(end_latitude), _fmt(end_longitude)
+        if lat is None or lng is None:
+            return {}
+        return {'end_latitude': lat, 'end_longitude': lng}
+
+    @api.model
+    def field_end_trip(self, trip_id, end_km=None, end_time=None,
+                       end_latitude=None, end_longitude=None):
         """Mobile entry point: end a specific trip by id (used by the checkout
         End-KM popup). Ends an "Over" trip too — the bypass context is set on
         the trip recordset and the recompute/constraint are forced to run via
@@ -118,6 +136,7 @@ class VehicleTracking(models.Model):
         vals = {'end_trip': True, 'end_time': end_time or fields.Datetime.now()}
         if end_km not in (None, ''):
             vals['end_km'] = int(end_km)
+        vals.update(trip._end_gps_vals(end_latitude, end_longitude))
         trip.write(vals)
         trip.flush_recordset()
         return {'success': True}
