@@ -17,6 +17,16 @@ class EmployeeDevice(models.Model):
     active = fields.Boolean(string='Active', default=True)
     last_used = fields.Datetime(string='Last Used')
 
+    def unlink(self):
+        """A PIN only works from a registered phone, so once an employee's
+        last device is deleted their PIN goes too."""
+        employees = self.mapped('employee_id')
+        res = super().unlink()
+        for emp in employees.exists():
+            if emp.pin and not emp._primary_device():
+                emp.sudo().pin = False
+        return res
+
     @api.constrains('employee_id')
     def _check_single_device(self):
         """Only one device (active or archived) may be registered per employee."""

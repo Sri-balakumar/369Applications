@@ -71,6 +71,12 @@
         <field name="priority">99</field>
         <field name="arch" type="xml">
             <form string="Employee Device">
+                <header>
+                    <button name="action_remove_device" type="object"
+                            string="Remove Device" class="btn-danger"
+                            invisible="not device_code"
+                            confirm="Remove this employee's device and PIN? The phone will no longer be able to mark attendance."/>
+                </header>
                 <sheet>
                     <group>
                         <group string="Employee">

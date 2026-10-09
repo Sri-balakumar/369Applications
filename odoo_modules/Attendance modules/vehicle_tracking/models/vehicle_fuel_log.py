@@ -47,6 +47,8 @@ class VehicleFuelLog(models.Model):
     # GPS Tracking
     gps_lat = fields.Char(string='GPS Latitude')
     gps_long = fields.Char(string='GPS Longitude')
+    gps_location_name = fields.Char(string='Fuel Location',
+                                    help="Address of the fuel stop, resolved from the phone's GPS.")
 
     # Auto timestamp
     create_date = fields.Datetime(

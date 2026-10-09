@@ -100,11 +100,43 @@ class HrEmployee(models.Model):
             emp.device_added_date = dev.create_date if dev else False
             emp.device_last_used = dev.last_used if dev else False
 
+    @api.onchange('device_code')
+    def _onchange_device_code_cleared(self):
+        """Erasing the Device ID warns that saving removes the device AND the
+        PIN (Discard keeps both). The PIN is blanked here so the form shows
+        what will be saved."""
+        if (self.device_code or '').strip() or not self._origin.device_code:
+            return
+        self.pin = False
+        return {'warning': {
+            'title': _("Remove device?"),
+            'message': _(
+                "Saving will remove the device %(device)s and the PIN of %(name)s. "
+                "The phone will no longer be able to mark attendance.\n\n"
+                "Click Discard to keep the device.",
+                device=self._origin.device_code, name=self.name),
+        }}
+
+    def _remove_device_and_pin(self):
+        """Delete every device row (active or archived) and clear the PIN, so
+        the Devices list, the form and the phone app all stop seeing it."""
+        Device = self.env['employee.device'].with_context(active_test=False).sudo()
+        for emp in self:
+            Device.search([('employee_id', '=', emp.id)]).unlink()
+            if emp.pin:
+                emp.pin = False
+
+    def action_remove_device(self):
+        """Header button (with confirm dialog) on the Devices form."""
+        self._remove_device_and_pin()
+        return True
+
     def _inverse_device_code(self):
         Device = self.env['employee.device'].with_context(active_test=False)
         for emp in self:
             code = (emp.device_code or '').strip()
             if not code:
+                emp._remove_device_and_pin()
                 continue
             same = Device.search(
                 [('employee_id', '=', emp.id), ('device_id', '=', code)], limit=1)

@@ -843,6 +843,10 @@
                                    invisible="not trip_id"/>
                             <field name="gps_longitude" readonly="1"
                                    invisible="not trip_id"/>
+                            <field name="end_gps_latitude" readonly="1"
+                                   invisible="not trip_id"/>
+                            <field name="end_gps_longitude" readonly="1"
+                                   invisible="not trip_id"/>
                         </group>
                     </group>
                     <group colspan="2" invisible="not trip_id">
@@ -942,6 +946,10 @@
                             <field name="gps_latitude" readonly="1"
                                    invisible="not trip_id"/>
                             <field name="gps_longitude" readonly="1"
+                                   invisible="not trip_id"/>
+                            <field name="end_gps_latitude" readonly="1"
+                                   invisible="not trip_id"/>
+                            <field name="end_gps_longitude" readonly="1"
                                    invisible="not trip_id"/>
                         </group>
                     </group>

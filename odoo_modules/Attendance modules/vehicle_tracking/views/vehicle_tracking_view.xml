@@ -109,6 +109,17 @@
               <field name="estimated_km" readonly="end_trip or trip_cancel"/>
             </group>
           </group>
+          <!-- GPS captured from the phone at Start Trip / trip close. -->
+          <group string="GPS Location">
+            <group>
+              <field name="start_latitude" readonly="1"/>
+              <field name="start_longitude" readonly="1"/>
+            </group>
+            <group>
+              <field name="end_latitude" readonly="1"/>
+              <field name="end_longitude" readonly="1"/>
+            </group>
+          </group>
           <!-- Trip Comparison — appears once the trip is ended. Shows
                actual KM/duration alongside their variance vs the
                ORS-estimated values. Admins can sort the list view by

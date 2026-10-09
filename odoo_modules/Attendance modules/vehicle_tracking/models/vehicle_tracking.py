@@ -343,6 +343,10 @@ class VehicleTracking(models.Model):
         if self.vehicle_id:
             self.number_plate = self.vehicle_id.license_plate
             self.tank_capacity = self.vehicle_id.tank_capacity
+            # Same as the mobile app: take the driver assigned in Fleet, but
+            # keep a manually chosen driver if the vehicle has none.
+            if self.vehicle_id.driver_id:
+                self.driver_id = self.vehicle_id.driver_id
         else:
             self.number_plate = False
             self.tank_capacity = 0.0

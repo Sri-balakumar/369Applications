@@ -41,6 +41,7 @@
                             <field name="odometer"/>
                             <field name="gps_lat"/>
                             <field name="gps_long"/>
+                            <field name="gps_location_name"/>
                         </group>
                     </group>
                     <group string="Images">
@@ -91,6 +92,7 @@
                 <group>
                     <field name="gps_lat"/>
                     <field name="gps_long"/>
+                    <field name="gps_location_name"/>
                 </group>
 
                 <group string="Images">

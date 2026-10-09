@@ -1192,11 +1192,10 @@ class HrAttendance(models.Model):
     def start_field_attendance(self, employee_id, late_reason=None):
         """Open a field attendance for today (check_in=now, no check_out).
 
-        Best-effort: auto-links today's earliest trip + all of the employee's
-        visits IF they already exist; otherwise leaves them empty so the user
-        can pick them later from the mobile app via Edit Primary Trip and
-        Add Additional Trip. GPS prefers the first visit's coordinates over
-        the trip's start coords (matches create_field_attendance behaviour).
+        No trip is linked here: like the web form, the user then chooses
+        "Setup Primary Trip (Home → Office)" or "Setup Secondary Trip
+        (Home → Visit)" from the app. GPS comes from today's first visit, if
+        one already exists.
         """
         employee = self.env['hr.employee'].sudo().browse(employee_id)
         if not employee.exists():
@@ -1225,24 +1224,15 @@ class HrAttendance(models.Model):
                 'attendance_id': existing.id,
             }
 
-        # Best-effort auto-link to existing trip / visits.
+        # GPS from today's first visit, if any. No trip auto-link — a trip
+        # started earlier today (e.g. on a deleted attendance) must not become
+        # the primary trip; the user sets up Primary / Secondary explicitly.
         partner_ids = self._employee_partner_ids(employee)
-        primary_trip_id = False
         visit_ids = []
         gps_lat = 0.0
         gps_lng = 0.0
         gps_name = ''
         if partner_ids:
-            Trip = self.env['vehicle.tracking'].sudo()
-            trips = Trip.search([
-                ('driver_id', 'in', partner_ids),
-                ('date', '=', local_date),
-                ('trip_status', 'in', ['in_progress', 'ended']),
-            ], order='start_time asc', limit=1)
-            if trips:
-                primary_trip_id = trips[0].id
-                gps_lat, gps_lng = self._resolve_trip_gps(trips[0])
-                gps_name = trips[0].source_id.name if trips[0].source_id else ''
             Visit = self.env['customer.visit'].sudo()
             visits = Visit.search([
                 ('employee_id', '=', employee.id),
@@ -1289,8 +1279,6 @@ class HrAttendance(models.Model):
             'gps_longitude': gps_lng,
             'gps_location_name': gps_name,
         }
-        if primary_trip_id:
-            vals['source_trip_id'] = primary_trip_id
         if late_reason and late_reason.strip():
             vals['late_reason'] = late_reason.strip()
         # source_visit_ids deliberately left empty — per user requirement, the
@@ -1359,6 +1347,8 @@ class HrAttendance(models.Model):
             'trip_fuel_log_summary': line.trip_fuel_log_summary or '',
             'gps_latitude': line.gps_latitude or '',
             'gps_longitude': line.gps_longitude or '',
+            'end_gps_latitude': line.end_gps_latitude or '',
+            'end_gps_longitude': line.end_gps_longitude or '',
         }
 
     @api.model
