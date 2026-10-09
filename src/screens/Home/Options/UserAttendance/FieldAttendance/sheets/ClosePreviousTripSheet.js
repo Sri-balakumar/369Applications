@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Modal, View, Text, TextInput, TouchableOpacity, ActivityIndicator,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -36,15 +36,36 @@ const ClosePreviousTripSheet = ({
   // the 1st too-far Save tap blocks with a retry hint; the 2nd saves anyway.
   const [saveAttempts, setSaveAttempts] = useState(0);
 
+  // Latest usable GPS fix — sent with End KM as the closed trip's end location
+  // (return-home legs have no visit, so this is their only arrival point).
+  // fixPromiseRef lets Save wait for a fetch that's still in flight.
+  const endFixRef = useRef(null);
+  const fixPromiseRef = useRef(null);
+  const captureFix = () => {
+    const p = getCurrentFix()
+      .then((fix) => {
+        if (fix?.latitude != null && fix?.longitude != null
+            && fix.source !== 'denied' && fix.source !== 'unavailable' && fix.source !== 'stale') {
+          endFixRef.current = { latitude: fix.latitude, longitude: fix.longitude };
+        }
+        return fix;
+      })
+      .catch(() => null);
+    fixPromiseRef.current = p;
+    return p;
+  };
+
   // Run the destination GPS check. 'too_far' is the only state that BLOCKS Save;
   // 'unavailable'/'no_coords' allow close (so drivers aren't trapped).
   const runVerify = useCallback(async () => {
     if (!destinationCoords || destinationCoords.latitude == null || destinationCoords.longitude == null) {
       setVerify({ status: 'no_coords', distance: null });
+      // No destination to verify against — still grab the end location.
+      captureFix();
       return;
     }
     setVerify({ status: 'checking', distance: null });
-    const fix = await getCurrentFix();
+    const fix = (await captureFix()) || { source: 'unavailable' };
     if (fix.source === 'denied' || fix.source === 'stale' || fix.source === 'unavailable') {
       console.log(TAG, 'verify: GPS unavailable —', fix.source);
       setVerify({ status: 'unavailable', distance: null });
@@ -73,6 +94,8 @@ const ClosePreviousTripSheet = ({
       setErrorText('');
       setVerify({ status: 'idle', distance: null });
       setSaveAttempts(0);
+      endFixRef.current = null;
+      fixPromiseRef.current = null;
       // Auto-verify on open so the driver immediately sees their status.
       runVerify();
     }
@@ -83,7 +106,7 @@ const ClosePreviousTripSheet = ({
   // button stays ENABLED so tapping it surfaces a red error (chosen UX).
   const verifyChecking = verify.status === 'checking';
 
-  const handleSave = () => {
+  const handleSave = async () => {
     console.log(TAG, 'Save clicked', { endKm, previousStartKm, verifyStatus: verify.status });
     const n = Number(endKm);
     if (!Number.isFinite(n) || n <= 0) {
@@ -128,9 +151,14 @@ const ClosePreviousTripSheet = ({
         }
       }
     }
-    console.log(TAG, '  validation OK → onSave');
     setErrorText('');
-    onSave(n);
+    // Wait for an in-flight fix (e.g. no-destination case) so the end GPS
+    // isn't dropped; never blocks when there's no fetch pending.
+    if (!endFixRef.current && fixPromiseRef.current) {
+      await fixPromiseRef.current;
+    }
+    console.log(TAG, '  validation OK → onSave', { endFix: endFixRef.current });
+    onSave(n, endFixRef.current);
   };
 
   return (

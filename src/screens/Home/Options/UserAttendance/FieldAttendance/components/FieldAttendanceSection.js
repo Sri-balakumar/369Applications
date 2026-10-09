@@ -21,11 +21,14 @@ import {
   submitTripDeviationReasonOdoo,
 } from '@api/services/generalApi';
 import { submitLateReason } from '@services/AttendanceService';
+import { forceFlush } from '@services/OfflineSyncService';
 import { formatDateTimeOffice } from '@utils/officeTime';
 import { consumePendingNewTrip } from '@utils/newTripChannel';
 import { consumePendingNewVisit } from '@utils/newVisitChannel';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getPendingSecondaryTrip,
+  setPendingSecondaryTrip,
   clearPendingSecondaryTrip,
 } from '@utils/pendingSecondaryTrip';
 import TripDetailSheet from '@screens/Home/Options/UserAttendance/FieldAttendance/sheets/TripDetailSheet';
@@ -42,6 +45,25 @@ const FIELD_COLOR = '#1976D2';
 // regardless of which parent screen (UserAttendanceScreen or
 // FieldAttendanceDetailScreen) is hosting it.
 const TAG = '[FA-SECTION]';
+
+// Resolve a pending-trip marker id to a real server id. A trip started
+// offline is stored as 'offline_<localId>' until OfflineSyncService syncs it
+// and records localId → serverId in @sync:localToServer. Returns null while
+// the trip is still unsynced (or the id is missing altogether).
+const resolvePendingTripId = async (rawId) => {
+  let id = rawId;
+  if (typeof id === 'string' && id.startsWith('offline_')) {
+    try {
+      const mapRaw = await AsyncStorage.getItem('@sync:localToServer');
+      const map = mapRaw ? JSON.parse(mapRaw) : {};
+      id = map[id.slice('offline_'.length)] ?? null;
+    } catch (_) {
+      id = null;
+    }
+  }
+  const n = Number(id);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
 
 const ERROR_MESSAGES = {
   start_km_required: 'Start KM is required and must be greater than 0.',
@@ -288,6 +310,15 @@ const FieldAttendanceSection = ({
         return;
       }
       console.log(TAG, 'loaded pending secondary trip marker', stored);
+      // Swap an offline id for the server id once the trip has synced.
+      const resolved = await resolvePendingTripId(stored.tripId);
+      if (cancelled) return;
+      if (resolved && resolved !== stored.tripId) {
+        const marker = { ...stored, tripId: resolved, offline: false };
+        await setPendingSecondaryTrip(marker);
+        setPendingSecondary(marker);
+        return;
+      }
       setPendingSecondary(stored);
     })();
     return () => { cancelled = true; };
@@ -314,10 +345,12 @@ const FieldAttendanceSection = ({
   // snapshot needed for instant render; the ref is fetched once.
   useEffect(() => {
     if (!pendingSecondary) { setPendingTripHydrated(null); return; }
+    const tripIdNum = Number(pendingSecondary.tripId);
+    if (!Number.isInteger(tripIdNum) || tripIdNum <= 0) return; // unsynced offline trip
     let cancelled = false;
     (async () => {
       try {
-        const rows = await readVehicleTrackingForTripIdsOdoo([Number(pendingSecondary.tripId)]);
+        const rows = await readVehicleTrackingForTripIdsOdoo([tripIdNum]);
         if (cancelled) return;
         const full = rows?.[0] || null;
         if (full) setPendingTripHydrated(full);
@@ -608,8 +641,46 @@ const FieldAttendanceSection = ({
   // its lat/lng will be captured at this moment, then the FA section's
   // useFocusEffect catches the new visit id and links it to the pending
   // trip via createAdditionalTripOdoo (see the 'pending_attach' branch).
-  const handlePendingEnterVisits = (p) => {
-    if (!p?.tripId) return;
+  const handlePendingEnterVisits = async (p) => {
+    const rawId = p?.tripId ?? pendingTripHydrated?.id;
+    let tripId = await resolvePendingTripId(rawId);
+    // Trip was queued offline (the online check can time out on a slow
+    // server even with internet) — push the queue now, then re-resolve.
+    if (!tripId && typeof rawId === 'string' && rawId.startsWith('offline_')) {
+      setBusy(true);
+      try {
+        const res = await forceFlush();
+        console.log(TAG, 'handlePendingEnterVisits — forceFlush', res);
+      } catch (e) {
+        console.warn(TAG, 'handlePendingEnterVisits — forceFlush failed:', e?.message);
+      } finally {
+        setBusy(false);
+      }
+      tripId = await resolvePendingTripId(rawId);
+    }
+    if (!tripId && (rawId === undefined || rawId === null || rawId === '')) {
+      // Marker saved with no id at all (older builds) — it can never be
+      // linked, so drop it instead of leaving a dead card that also blocks
+      // check-out.
+      console.warn(TAG, 'handlePendingEnterVisits — marker has no trip id, clearing', p);
+      await clearPendingSecondaryTrip();
+      setPendingSecondary(null);
+      setPendingTripHydrated(null);
+      showToastMessage('Trip link was lost. Please set up the secondary trip again.');
+      await refresh({ silent: true });
+      return;
+    }
+    if (!tripId) {
+      console.warn(TAG, 'handlePendingEnterVisits — pending trip has no synced id', p);
+      showToastMessage("This trip hasn't synced yet. Check your connection and tap again.");
+      return;
+    }
+    if (tripId !== p?.tripId) {
+      // Persist the resolved id so the pending_attach step links the right trip.
+      const marker = { ...p, tripId, offline: false };
+      await setPendingSecondaryTrip(marker);
+      setPendingSecondary(marker);
+    }
     // Forward the trip's purpose_of_visit_id so VisitForm can prefill its
     // Purpose dropdown (same name-match logic used elsewhere). Read from
     // the hydrated trip record; fall back to null if not yet hydrated.
@@ -618,11 +689,11 @@ const FieldAttendanceSection = ({
     const prefillPurposeId = purposeArr ? purposeArr[0] : (purposeRaw || null);
     const prefillPurposeName = purposeArr ? purposeArr[1] : null;
     console.log(TAG, 'handlePendingEnterVisits — navigating to VisitForm',
-      { tripId: p.tripId, prefillPurposeId, prefillPurposeName });
+      { tripId, prefillPurposeId, prefillPurposeName });
     lastActiveSheetRef.current = 'pending_attach';
     navigation.navigate('VisitForm', {
       returnTo: 'fieldAttendance',
-      attachToPendingTripId: p.tripId,
+      attachToPendingTripId: tripId,
       prefillPurposeId,
       prefillPurposeName,
     });
@@ -838,11 +909,12 @@ const FieldAttendanceSection = ({
   };
 
   // ---------- Mutations ----------
-  const handleClosePreviousTrip = async (endKm) => {
-    console.log(TAG, 'handleClosePreviousTrip start', { endKm });
+  // `endCoords` = phone GPS captured by the close popup → trip's end location.
+  const handleClosePreviousTrip = async (endKm, endCoords) => {
+    console.log(TAG, 'handleClosePreviousTrip start', { endKm, endCoords });
     setBusy(true);
     try {
-      const res = await closePreviousTripOdoo(attendanceId, endKm);
+      const res = await closePreviousTripOdoo(attendanceId, endKm, endCoords);
       if (res?.error) {
         console.warn(TAG, 'closePreviousTrip error:', res.error);
         // Belt-and-braces: when the server tells us the real start_km in the
@@ -917,8 +989,9 @@ const FieldAttendanceSection = ({
       console.log(TAG, 'handleSaveOutbound — no visit picked → committing as pending');
       try {
         const stored = await getPendingSecondaryTrip();
+        // String compare so offline ids ('offline_N') match too (NaN !== NaN).
         if (stored && Number(stored.attendanceId) === Number(attendanceId)
-            && Number(stored.tripId) === Number(tripId)) {
+            && String(stored.tripId) === String(tripId)) {
           setPendingSecondary(stored);
           console.log(TAG, 'handleSaveOutbound — pending marker promoted to UI state', stored);
         } else {
@@ -1686,8 +1759,12 @@ const PendingTripCard = ({ pending, hydrated, busy, onEnterVisits }) => {
             disabled={busy}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="add-location-alt" size={18} color="#fff" />
-            <Text style={styles.enterVisitsText}>Enter Visits</Text>
+            {busy ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <MaterialIcons name="add-location-alt" size={18} color="#fff" />
+            )}
+            <Text style={styles.enterVisitsText}>{busy ? 'Please wait…' : 'Enter Visits'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1737,8 +1814,6 @@ const TripLineRow = ({ line, index, isReturn, readOnly, onEditTrip, onOpenTrip, 
           <ColRow k="Destination" v={trip?.destination} />
           <ColRow k="KM Travelled" v={String(line.km_travelled || 0)} />
           <ColRow k="Duration (Hrs)" v={fmtDuration(line.duration)} />
-          <ColRow k="GPS Lat" v={trip?.start_latitude || '—'} />
-          <ColRow k="GPS Lng" v={trip?.start_longitude || '—'} />
         </View>
         {/* Right column — Visit Details (omitted for return legs without a
             visit attached). */}
@@ -1749,8 +1824,6 @@ const TripLineRow = ({ line, index, isReturn, readOnly, onEditTrip, onOpenTrip, 
             <ColRow k="Customer" v={visit.customer || (Array.isArray(visit.partner_id) ? visit.partner_id[1] : '')} />
             <ColRow k="Date / Time" v={fmtDT(visit.date_time)} />
             <ColRow k="Location" v={visit.location_name} />
-            <ColRow k="Latitude" v={visit.latitude || '—'} />
-            <ColRow k="Longitude" v={visit.longitude || '—'} />
           </View>
         ) : null}
       </View>

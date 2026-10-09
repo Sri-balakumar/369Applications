@@ -64,12 +64,12 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         showToastMessage('Capturing fuel GPS...', 'info');
         const loc = await getCurrentLocation('Add Fuel');
         console.log('[VehicleTrackingForm] Add Fuel GPS captured:', loc);
+        // Kept separate from start_latitude/start_longitude — writing the fuel
+        // stop there made the next trip update overwrite the real start point.
         setFormData(prev => ({
           ...prev,
-          start_latitude: String(loc.latitude),
-          start_longitude: String(loc.longitude),
-          startLatitude: loc.latitude,
-          startLongitude: loc.longitude,
+          fuelLatitude: String(loc.latitude),
+          fuelLongitude: String(loc.longitude),
         }));
         showToastMessage('Fuel location captured', 'success');
       } catch (e) {
@@ -2231,7 +2231,10 @@ const VehicleTrackingForm = ({ navigation, route }) => {
             try {
               await setPendingSecondaryTrip({
                 attendanceId: route.params.attendanceId,
-                tripId: response?.tripId,
+                // Offline creates return { id: 'offline_N' } with no tripId —
+                // keep that id so FA can tell the trip hasn't synced yet.
+                tripId: response?.tripId ?? response?.id ?? null,
+                offline: !!response?.offline,
                 startKm: Number(submitData.start_km) || 0,
                 // ref is filled in by FA after it fetches the trip details
                 // via readVehicleTrackingForTripIdsOdoo — leave empty here.
@@ -2243,7 +2246,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
                 createdAt: new Date().toISOString(),
               });
               console.log('[VehicleTrackingForm] persisted pending secondary trip marker', {
-                tripId: response?.tripId, attendanceId: route.params.attendanceId,
+                tripId: response?.tripId ?? response?.id, attendanceId: route.params.attendanceId,
               });
             } catch (e) {
               console.warn('[VehicleTrackingForm] failed to persist pending marker:', e?.message);
@@ -2346,10 +2349,16 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         'fuelInvoiceUri set:', !!formData.fuelInvoiceUri,
         'odometer b64 len:', formData.odometerImageBase64?.length || 0,
         'receipt b64 len:', formData.fuelInvoiceBase64?.length || 0);
+      // Trip data may carry raw Odoo [id, name] pairs (opened from Field
+      // Attendance) — unwrap them. When the trip itself has no driver, fall
+      // back to the selected vehicle's driver (what the Driver field shows).
+      const selectedVehicle = (dropdowns.vehicles || []).find(v => v.name === formData.vehicle);
+      const fuelVehicleId = m2oId(existingTripData.vehicle_id) || selectedVehicle?._id || null;
+      const fuelDriverId = m2oId(existingTripData.driver_id) || selectedVehicle?.driver?.id || null;
       const log = await createFuelLogOdoo({
         tripId: existingTripData.id,
-        vehicleId: existingTripData.vehicle_id,
-        driverId: existingTripData.driver_id,
+        vehicleId: fuelVehicleId,
+        driverId: fuelDriverId,
         amount: formData.fuelAmount,
         fuelLevel: formData.fuelLitre,
         odometer: formData.currentOdometer,
@@ -2358,8 +2367,8 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         // Prepared base64 (preferred — bypasses URI-scheme guessing in createFuelLogOdoo).
         odometerImageBase64: formData.odometerImageBase64 || null,
         fuelInvoiceBase64: formData.fuelInvoiceBase64 || null,
-        gpsLat: formData.start_latitude || formData.startLatitude || (currentCoords ? String(currentCoords.latitude) : ''),
-        gpsLong: formData.start_longitude || formData.startLongitude || (currentCoords ? String(currentCoords.longitude) : ''),
+        gpsLat: formData.fuelLatitude || (currentCoords ? String(currentCoords.latitude) : '') || formData.start_latitude || '',
+        gpsLong: formData.fuelLongitude || (currentCoords ? String(currentCoords.longitude) : '') || formData.start_longitude || '',
       });
       log.driver_name = existingTripData?.driver_name || formData.driver || '';
       console.log('[submitAddFuel] log returned — odometer_image len=',

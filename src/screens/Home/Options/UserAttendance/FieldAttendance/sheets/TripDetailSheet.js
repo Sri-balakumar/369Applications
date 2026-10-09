@@ -89,13 +89,6 @@ const TripDetailSheet = ({ visible, trip, loading, onClose, onOpenInVehicleTrack
               <View style={styles.sectionGroup}>
                 <Row icon="schedule" label="Start" value={fmtDateTime(trip.start_time)} />
                 <Row icon="schedule" label="End" value={fmtDateTime(trip.end_time)} />
-                <Row
-                  icon="my-location"
-                  label="Start GPS"
-                  value={trip.start_latitude || trip.start_longitude
-                    ? `${trip.start_latitude || '0'}, ${trip.start_longitude || '0'}`
-                    : '—'}
-                />
               </View>
 
               <View style={styles.statsGrid}>

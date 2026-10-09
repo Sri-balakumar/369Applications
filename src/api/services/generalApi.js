@@ -1014,9 +1014,19 @@ export const deleteFieldTripLineOdoo = async (lineId) => {
   return true;
 };
 
+// End-of-trip GPS as RPC kwargs ({} when there's no usable fix). Needs
+// hr_field_attendance >= 19.0.1.15.8, which accepts end_latitude/end_longitude.
+const _endGpsKwargs = (coords) => {
+  const lat = Number(coords?.latitude);
+  const lng = Number(coords?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return {};
+  return { end_latitude: lat, end_longitude: lng };
+};
+
 // Mark a vehicle.tracking trip as ended (used by the Add-Additional-Trip
-// confirm-close-previous flow when the user accepts the prompt).
-export const endVehicleTripFromAttendanceOdoo = async (tripId, endTime, endKm) => {
+// confirm-close-previous flow when the user accepts the prompt). `coords`
+// ({latitude, longitude}) is stored as the trip's end location.
+export const endVehicleTripFromAttendanceOdoo = async (tripId, endTime, endKm, coords) => {
   if (!tripId) throw new Error('tripId is required');
   // Format: Odoo expects 'YYYY-MM-DD HH:MM:SS' UTC. Caller may pass a Date,
   // an ISO string, or undefined (server fills "now").
@@ -1042,6 +1052,7 @@ export const endVehicleTripFromAttendanceOdoo = async (tripId, endTime, endKm) =
     model: 'vehicle.tracking',
     method: 'field_end_trip',
     args: [Number(tripId), endKmArg, endStr],
+    kwargs: _endGpsKwargs(coords),
   });
   if (result?.error) throw new Error(result.error);
   return true;
@@ -1099,13 +1110,17 @@ export const getFieldAttendanceStateOdoo = async (attendanceId) => {
   return result || {};
 };
 
-export const closePreviousTripOdoo = async (attendanceId, endKm) => {
+// `coords` ({latitude, longitude}) is the phone's GPS at close time — stored
+// as the closed trip's end location (the only arrival point for return legs).
+export const closePreviousTripOdoo = async (attendanceId, endKm, coords) => {
   if (!attendanceId) throw new Error('attendanceId is required');
-  console.log(FA_TAG, '→ closePreviousTrip', { attendanceId, endKm });
+  const kwargs = _endGpsKwargs(coords);
+  console.log(FA_TAG, '→ closePreviousTrip', { attendanceId, endKm, ...kwargs });
   const result = await _fieldRpc({
     model: 'hr.attendance',
     method: 'field_action_close_previous_trip',
     args: [Number(attendanceId), Number(endKm) || 0],
+    kwargs,
   });
   console.log(FA_TAG, '← closePreviousTrip', result);
   return result || {};
@@ -1577,16 +1592,24 @@ export const createFuelLogOdoo = async ({
   password = DEFAULT_VEHICLE_TRACKING_PASSWORD,
   db = DEFAULT_VEHICLE_TRACKING_DB,
 } = {}) => {
-  if (!tripId) throw new Error('tripId is required to create a fuel log');
+  // Accept raw Odoo m2o pairs ([id, name]) as well as plain ids; anything that
+  // isn't a positive integer is left out (Odoo fills vehicle/driver from the
+  // trip) instead of reaching the server as null.
+  const toId = (v) => {
+    const n = Number(Array.isArray(v) ? v[0] : v);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+  const tripIdNum = toId(tripId);
+  if (!tripIdNum) throw new Error('Save the trip first, then add fuel.');
   const baseUrl = (VEHICLE_TRACKING_BASE_URL() || '').replace(/\/$/, '');
   const loginResp = await loginVehicleTrackingOdoo({ username, password, db });
   const headers = await getOdooAuthHeaders();
   if (loginResp && loginResp.cookies) headers.Cookie = loginResp.cookies;
 
   const fuelPayload = {
-    vehicle_tracking_id: Number(tripId),
-    vehicle_id: vehicleId ? Number(vehicleId) : undefined,
-    driver_id: driverId ? Number(driverId) : undefined,
+    vehicle_tracking_id: tripIdNum,
+    vehicle_id: toId(vehicleId),
+    driver_id: toId(driverId),
     amount: amount != null && amount !== '' ? Number(amount) : undefined,
     fuel_level: fuelLevel != null && fuelLevel !== '' ? Number(fuelLevel) : undefined,
     odometer: odometer != null && odometer !== '' ? Number(odometer) : undefined,

@@ -1121,7 +1121,8 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   // ClosePreviousTripSheet's own validation (n > 0 AND n > startKm).
   // Closes the trip with that value, bulk-marks linked visits done, then
   // runs the existing confirm + camera + checkout flow.
-  const submitEndKmAndCheckout = useCallback(async (km) => {
+  // `endCoords` = phone GPS from the sheet → stored as the last trip's end location.
+  const submitEndKmAndCheckout = useCallback(async (km, endCoords) => {
     const n = Number(km);
     if (!Number.isFinite(n) || n <= 0) {
       console.warn('[UA-CHECKOUT] submitEndKmAndCheckout: invalid km', { km });
@@ -1132,10 +1133,11 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       tripId: endKmPrompt.tripId,
       startKm: endKmPrompt.startKm,
       endKm: n,
+      endCoords,
     });
     setEndKmPrompt((s) => ({ ...s, saving: true }));
     try {
-      await endVehicleTripFromAttendanceOdoo(endKmPrompt.tripId, null, n);
+      await endVehicleTripFromAttendanceOdoo(endKmPrompt.tripId, null, n, endCoords);
       console.log('[UA-CHECKOUT]   trip ended OK → bulk-marking visits done');
       // Clear the pending-secondary-trip marker (if any) since the trip
       // is now closed on the server. Harmless when no marker exists.
