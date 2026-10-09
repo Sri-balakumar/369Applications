@@ -327,6 +327,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   // Selfie camera readiness: the countdown only runs once the preview is
   // live; a camera that never starts is remounted, then offered a Retry.
   const selfieCam = useCameraReadyWatchdog(showCamera);
+  const selfieFailCountRef = useRef(0);
 
   // Single styled alert modal state for all in-screen confirmations/errors.
   // Use showAlert({ message, confirmText?, cancelText?, destructive?, onConfirm?, onCancel? })
@@ -1535,6 +1536,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     setCameraType(type);
     setCountdown(3);
     setIsCapturing(false);
+    selfieFailCountRef.current = 0;
     setShowCamera(true);
     return true;
   };
@@ -1545,24 +1547,40 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     setIsCapturing(false);
   };
 
+  // User backed out of the selfie camera (✕ / back button / repeated capture
+  // failure): also clear every "submitting" flag the caller set before
+  // opening the camera, or the Check In / Check Out button stays greyed out.
+  const cancelCamera = () => {
+    closeCamera();
+    setLoading(false);
+    setFieldSubmitting(false);
+    setCheckOutSubmitting(false);
+  };
+
   const capturePhoto = async () => {
-    if (isCapturing || !cameraRef.current) return;
+    if (isCapturing) return;
 
     setIsCapturing(true);
     let photo;
     try {
+      if (!cameraRef.current) throw new Error('camera ref not attached');
       photo = await withTimeout(
-        cameraRef.current.takePictureAsync({ quality: 0.7, base64: true }),
-        8000,
+        cameraRef.current.takePictureAsync({ quality: 0.5, base64: true }),
+        20000,
         'selfie takePictureAsync',
       );
     } catch (e) {
-      // Capture hung or failed — restart the camera and the countdown
-      // instead of leaving the screen stuck on "Capturing...".
-      console.warn('[Attendance] selfie capture failed:', e?.message);
-      showToastMessage("Couldn't take photo, retrying…");
+      selfieFailCountRef.current += 1;
+      console.warn('[Attendance] selfie capture failed (attempt', selfieFailCountRef.current + '):', e?.message);
       setIsCapturing(false);
-      selfieCam.remount('selfie capture failed');
+      if (selfieFailCountRef.current < 2) {
+        // Restart the camera + countdown and try once more.
+        showToastMessage("Couldn't take photo, retrying…");
+        selfieCam.remount('selfie capture failed');
+      } else {
+        showToastMessage("Camera couldn't take the photo. Please tap Check In / Check Out again.");
+        cancelCamera();
+      }
       return;
     }
     try {
@@ -1590,9 +1608,8 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       }
     } catch (error) {
       console.error('Photo capture error:', error);
-      showToastMessage('Failed to capture photo');
-      closeCamera();
-      setLoading(false);
+      showToastMessage(error?.message || 'Check in / check out failed');
+      cancelCamera();
     }
   };
 
@@ -4727,7 +4744,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       <Modal
         visible={showCamera}
         animationType="slide"
-        onRequestClose={closeCamera}
+        onRequestClose={cancelCamera}
       >
         <View style={styles.cameraContainer}>
           <Camera
@@ -4741,10 +4758,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
               <View style={styles.cameraHeader}>
                 <TouchableOpacity
                   style={styles.cameraCloseButton}
-                  onPress={() => {
-                    closeCamera();
-                    setLoading(false);
-                  }}
+                  onPress={cancelCamera}
                 >
                   <MaterialIcons name="close" size={scale(28)} color={COLORS.white} />
                 </TouchableOpacity>
