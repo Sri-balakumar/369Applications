@@ -1,0 +1,53 @@
+# Field flow step 3 - Check In: YES on the confirm, front-camera selfie
+# (auto-captures after a 3 s countdown), late reason if the popup shows.
+# Needs today's status to be "eligible" (no field/office punch yet today).
+appId: ${APP_ID}
+---
+- assertNotVisible:
+    text: "Go to Office Attendance"
+    label: "Already checked in via Office Attendance today"
+- assertNotVisible:
+    text: "Field attendance complete"
+    label: "Field attendance already checked out today"
+- extendedWaitUntil:
+    visible: "You can pick a primary trip and link visits after checking in."
+    timeout: 15000
+- takeScreenshot: field_05_before_checkin
+- tapOn:
+    text: "Check In"
+    index: 1          # index 0 is the "Check In --:--" time card
+- extendedWaitUntil:
+    visible: "Are you sure you want to check in at.*"
+    timeout: 10000
+- takeScreenshot: field_06_checkin_confirm
+- tapOn: "YES"
+- extendedWaitUntil:
+    visible: "Check In Photo"
+    timeout: 15000
+- takeScreenshot: field_07_checkin_selfie
+# Countdown + capture + upload; then either the late popup or the toast.
+- extendedWaitUntil:
+    visible: "You're Late|Field check-in marked|Primary Trip"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "You're Late"
+    commands:
+      - takeScreenshot: field_08_late_popup
+      - tapOn: "Enter your reason for being late..."
+      - inputText: "Maestro E2E - traffic delay"
+      - tapOn: "Please provide a reason:"
+      - tapOn:
+          text: "Submit Reason"
+          enabled: true
+- extendedWaitUntil:
+    visible: "Primary Trip"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
+# Same as the web form: no trip is auto-linked at check-in, the user picks
+# Primary (Home -> Office) or Secondary (Home -> Visit).
+- assertVisible: "No primary trip set up yet."
+- assertVisible: "Setup Primary Trip \\(Home . Office\\)"
+- assertVisible: "Setup Secondary Trip \\(Home . Visit\\)"
+- takeScreenshot: field_09_checked_in

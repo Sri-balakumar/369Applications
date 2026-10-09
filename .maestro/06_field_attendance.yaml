@@ -1,0 +1,52 @@
+# =============================================================================
+# Flow 6 - Field Attendance full day (Expo Go dev session)
+# =============================================================================
+# Check in (selfie, late reason) -> Primary trip Home->Office (+ Add Fuel)
+# -> Secondary trip Office->Visit -> Enter Visits -> Check out (End KM, selfie).
+# GPS is faked with setLocation so every distance check passes at the right
+# place; map pins are tapped as screen % (tuned for the 1200x1920 Galaxy Tab).
+#
+# Pre-reqs:
+#   - App open in Expo Go and logged in (as employee1); Metro running.
+#   - employee1 has NO attendance today (check-in can only happen once a day).
+#   - Vehicle with employee1 as driver; start KM auto-fills from the last trip,
+#     so PRIMARY_END_KM / CHECKOUT_END_KM must be above the current odometer.
+#
+# Run:  maestro test .maestro/06_field_attendance.yaml -e PIN=123 \
+#         -e PRIMARY_END_KM=20 -e CHECKOUT_END_KM=22
+# Screenshots land in the test-output dir (copy them to screenshots/).
+# =============================================================================
+appId: ${APP_ID}
+env:
+  APP_ID: host.exp.exponent
+  PIN: ""
+  VEHICLE: "Suzuki/Maruti/TN55H2000"
+  CUSTOMER: "My Company"
+  # Home / Office / Visit = vehicle.location rows in the Attendance DB
+  HOME_LAT: "10.3516022"
+  HOME_LNG: "77.9755845"
+  OFFICE_LAT: "10.3696261"
+  OFFICE_LNG: "77.9690266"
+  VISIT_LAT: "10.3675928"
+  VISIT_LNG: "77.9685116"
+  OFFICE_TAP_X: "40.5"
+  OFFICE_TAP_Y: "32.6"
+  VISIT_TAP_X: "49.25"
+  VISIT_TAP_Y: "51.25"
+  FUEL_AMOUNT: "500"
+  FUEL_LITRES: "5"
+  FUEL_ODOMETER: "13"
+  PRIMARY_END_KM: "15"
+  CHECKOUT_END_KM: "17"
+---
+- launchApp:
+    stopApp: false
+- runFlow: subflows/field/login_prefilled.yaml
+- runFlow: subflows/field/assert_logged_in.yaml
+- runFlow: subflows/field/open_field.yaml
+- runFlow: subflows/field/check_in.yaml
+- runFlow: subflows/field/trip_primary.yaml
+- runFlow: subflows/field/add_fuel.yaml
+- runFlow: subflows/field/trip_secondary.yaml
+- runFlow: subflows/field/enter_visit.yaml
+- runFlow: subflows/field/check_out.yaml

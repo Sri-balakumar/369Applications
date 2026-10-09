@@ -1,0 +1,43 @@
+# Field flow step 2 - Home -> All Options -> User Attendance -> Field card,
+# then verify identity by PIN. With no PIN given, wait for the user to verify
+# by hand on the tablet (fingerprint or PIN).
+appId: ${APP_ID}
+---
+- tapOn: "All Options"
+- extendedWaitUntil:
+    visible: "Options"
+    timeout: 10000
+# "User Attendance" sits under "HR & Tracking", below the fold.
+- scrollUntilVisible:
+    element: "User Attendance"
+    direction: DOWN
+    timeout: 20000
+    centerElement: true
+- tapOn: "User Attendance"
+- extendedWaitUntil:
+    visible: "Select Attendance Type"
+    timeout: 10000
+- takeScreenshot: field_02_mode_cards
+- tapOn: "Field Attendance \\(Customer Visit\\)"
+- extendedWaitUntil:
+    visible: "Enter PIN|History"
+    timeout: 10000
+- takeScreenshot: field_03_verify
+- runFlow:
+    when:
+      true: ${PIN != ''}
+    commands:
+      - tapOn: "Enter your PIN"
+      - inputText: ${PIN}
+      # Not hideKeyboard: on Android it sends Back when the keyboard is
+      # already down, which leaves the screen. Tap a neutral label instead.
+      - tapOn: "LIVE TIME"
+      - tapOn:
+          text: "Verify PIN"
+          enabled: true
+- extendedWaitUntil:
+    visible: "History"
+    timeout: 120000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: field_04_today

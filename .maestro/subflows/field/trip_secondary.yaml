@@ -1,0 +1,75 @@
+# Field flow step 6 - Secondary trip (Office -> Visit). Closes the primary
+# trip at the office (fake GPS there -> "Verified"), answers the deviation
+# popup if it shows, then Create New Trip + Start Trip. Ends on the Pending
+# Trip card with "Enter Visits".
+appId: ${APP_ID}
+---
+- setLocation:
+    latitude: ${OFFICE_LAT}
+    longitude: ${OFFICE_LNG}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "Secondary Trip"
+- extendedWaitUntil:
+    visible: "Close Previous Trip"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: ".*Verified.*"
+    timeout: 20000
+- takeScreenshot: field_16_close_primary_gps_verified
+- tapOn: "> .*"
+- inputText: ${PRIMARY_END_KM}
+- tapOn: "End KM"
+- tapOn: "Save & Exit"
+- waitForAnimationToEnd:
+    timeout: 6000
+- runFlow:
+    when:
+      visible: "Trip Needs a Reason"
+    commands:
+      - takeScreenshot: field_17_trip_needs_reason
+      - tapOn: "Reason for going beyond.*"
+      - inputText: "Maestro E2E - waited at office"
+      - tapOn: "Estimated"
+      - tapOn:
+          text: "Submit Reason"
+          enabled: true
+- extendedWaitUntil:
+    visible: "Add Additional Trip"
+    timeout: 15000
+- takeScreenshot: field_18_additional_trip_sheet
+- tapOn: "Create New Trip"
+- extendedWaitUntil:
+    visible: "New Vehicle Tracking"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn: "Tap to select on map"
+- extendedWaitUntil:
+    visible: "Select Destination"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 4000
+- tapOn:
+    point: ${VISIT_TAP_X}%, ${VISIT_TAP_Y}%
+- tapOn: "Confirm Destination"
+- extendedWaitUntil:
+    visible: "New Vehicle Tracking"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Select purpose of visit"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Select purpose of visit"
+- tapOn: "Sales Visit"
+- scrollUntilVisible:
+    element: ".*Start Trip"
+    direction: DOWN
+    timeout: 15000
+- takeScreenshot: field_19_secondary_trip_form
+- tapOn: ".*Start Trip"
+- extendedWaitUntil:
+    visible: "Enter Visits"
+    timeout: 30000
+- assertVisible: "Complete the visit for your pending trip before adding another."
+- takeScreenshot: field_20_pending_trip_card

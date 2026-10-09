@@ -1,0 +1,25 @@
+# Logs in with the credentials the login screen already has filled in
+# (Expo Go reload drops the session but keeps server/db/user/password).
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible: "Enter Username or Email"
+    commands:
+      - takeScreenshot: field_00_login_prefilled
+      # Privacy checkbox (same spot as 01_login.yaml on the 1200x1920 tablet)
+      - tapOn:
+          point: 8%, 64%
+      - runFlow:
+          when:
+            visible: "ACCEPT"
+          commands:
+            - tapOn: "ACCEPT"
+            - waitForAnimationToEnd:
+                timeout: 2000
+      # Login button (the "Login" title text sits above it)
+      - tapOn:
+          point: 50%, 68%
+      - extendedWaitUntil:
+          visible: "All Options|What are you looking for ?"
+          timeout: 30000

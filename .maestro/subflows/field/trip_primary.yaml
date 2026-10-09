@@ -1,0 +1,62 @@
+# Field flow step 4 - Setup Primary Trip (Home -> Office) via Create New Trip.
+# Fake GPS: the tablet is "at home" (HOME_LAT/LNG) so Source auto-fills from
+# the current location; the destination pin is dropped on the map at the
+# office (OFFICE_TAP_X/Y = screen % from Home at zoom 14 on the 1200x1920 tab).
+appId: ${APP_ID}
+---
+- setLocation:
+    latitude: ${HOME_LAT}
+    longitude: ${HOME_LNG}
+- tapOn: "Setup Primary Trip.*"
+- extendedWaitUntil:
+    visible: "Tap to select a trip.*"
+    timeout: 10000
+- tapOn: "Tap to select a trip.*"
+- tapOn: "Create New Trip"
+- extendedWaitUntil:
+    visible: "New Vehicle Tracking"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 4000
+- tapOn: "Select vehicle"
+- tapOn: ${VEHICLE}
+- tapOn: "Tap to select on map"
+- extendedWaitUntil:
+    visible: "Select Destination"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 4000
+- tapOn:
+    point: ${OFFICE_TAP_X}%, ${OFFICE_TAP_Y}%
+- takeScreenshot: field_10b_destination_map
+- tapOn: "Confirm Destination"
+- extendedWaitUntil:
+    visible: "New Vehicle Tracking"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Select purpose of visit"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Select purpose of visit"
+- tapOn: "Other"
+- scrollUntilVisible:
+    element: ".*Start Trip"
+    direction: DOWN
+    timeout: 15000
+- takeScreenshot: field_10_primary_trip_form
+- tapOn: ".*Start Trip"
+# Back on Field Attendance with the new trip pre-selected in the sheet.
+- extendedWaitUntil:
+    visible: "Setup Primary Trip.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 4000
+- takeScreenshot: field_11_primary_sheet_filled
+- tapOn:
+    text: "Save"
+    index: 0
+- extendedWaitUntil:
+    visible: "Source Trip:"
+    timeout: 20000
+- assertVisible: "in_progress"
+- takeScreenshot: field_12_primary_saved

@@ -16,6 +16,7 @@ Think of it as Selenium for your mobile app — but simpler.
 | `03_late_reason_popup.yaml` | "You're Late" popup design + Submit Reason flow |
 | `04_checkout_confirmation.yaml` | Check Out confirmation popup with new wording + button labels |
 | `05_waiver_request.yaml` | Late Waiver Request — Session 1 AND Session 2 visible, submission flow |
+| `06_field_attendance.yaml` | Field Attendance full day in Expo Go — check-in selfie, Primary trip + Add Fuel, Secondary trip, Enter Visits, check-out. Steps live in `subflows/field/`; fake GPS via `setLocation`. Run with `-e PIN=<pin> -e PRIMARY_END_KM=<n> -e CHECKOUT_END_KM=<n>` (see the header of the file). Needs no attendance for the user today. |
 
 ---
 

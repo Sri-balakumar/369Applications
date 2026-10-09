@@ -1,0 +1,31 @@
+# Field flow step 5 - Add Fuel on the in-progress primary trip. The sheet must
+# show the captured Lat/Lng + resolved address (saved as the fuel location).
+appId: ${APP_ID}
+---
+- tapOn: "Add Fuel"
+- extendedWaitUntil:
+    visible: "Add Fuel Entry"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "Lat: .*"
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: "Resolving location.*"
+    timeout: 20000
+- takeScreenshot: field_13_add_fuel_gps
+- tapOn: "Amount"
+- inputText: ${FUEL_AMOUNT}
+- tapOn: "Litres"
+- inputText: ${FUEL_LITRES}
+- tapOn: "Start KM: .*"
+- inputText: ${FUEL_ODOMETER}
+- tapOn: "Current Odometer.*"
+- takeScreenshot: field_14_add_fuel_filled
+- tapOn: "Add Fuel"
+- extendedWaitUntil:
+    notVisible: "Add Fuel Entry"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: ".*fuel log.* added"
+    timeout: 15000
+- takeScreenshot: field_15_fuel_added

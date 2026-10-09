@@ -1,0 +1,36 @@
+# Field flow step 7 - Enter Visits at the visit location (fake GPS there).
+# VisitForm auto-fills Location / Latitude / Longitude; on SAVE the visit is
+# linked to the pending trip and shows on the Secondary Trip card.
+appId: ${APP_ID}
+---
+- setLocation:
+    latitude: ${VISIT_LAT}
+    longitude: ${VISIT_LNG}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: "Enter Visits"
+- extendedWaitUntil:
+    visible: "New Customer Visit"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 6000
+- tapOn: "Select customer"
+- tapOn: ${CUSTOMER}
+- scrollUntilVisible:
+    element: "Enter Remarks"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Enter Remarks"
+- inputText: "Maestro E2E field visit - demo and follow up"
+- tapOn: "Remarks.*"
+- takeScreenshot: field_21_visit_form_filled
+- scrollUntilVisible:
+    element: "SAVE"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "SAVE"
+- extendedWaitUntil:
+    visible: "VISIT DETAILS"
+    timeout: 40000
+- assertVisible: "Secondary Trip"
+- takeScreenshot: field_22_visit_linked

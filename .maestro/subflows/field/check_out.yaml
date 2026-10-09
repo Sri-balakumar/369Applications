@@ -1,0 +1,61 @@
+# Field flow step 8 - Check Out: End KM for the open trip (fake GPS at the
+# visit -> "Verified"), deviation reason if asked, confirm, selfie.
+appId: ${APP_ID}
+---
+- setLocation:
+    latitude: ${VISIT_LAT}
+    longitude: ${VISIT_LNG}
+- scrollUntilVisible:
+    element: "Update Reason"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Check Out"
+- extendedWaitUntil:
+    visible: "End KM for .*"
+    timeout: 10000
+- runFlow:
+    when:
+      notVisible: ".*Verified.*"
+    commands:
+      - tapOn: "Re-check"
+- extendedWaitUntil:
+    visible: ".*Verified.*"
+    timeout: 20000
+- takeScreenshot: field_24_checkout_endkm_gps_verified
+- tapOn:
+    text: "> .*"
+    index: 0
+- inputText: ${CHECKOUT_END_KM}
+- tapOn: "End KM"
+- tapOn: "Save & Checkout"
+- waitForAnimationToEnd:
+    timeout: 6000
+- runFlow:
+    when:
+      visible: ".*went beyond the estimate.*"
+    commands:
+      - takeScreenshot: field_25_checkout_trip_reason
+      - tapOn:
+          text: "Reason for going beyond.*"
+          index: 0
+      - inputText: "Maestro E2E - customer meeting ran long"
+      - tapOn: "Estimated"
+      - tapOn:
+          text: "Submit Reason"
+          enabled: true
+- extendedWaitUntil:
+    visible: "Check out now\\?.*"
+    timeout: 15000
+- takeScreenshot: field_26_checkout_confirm
+- tapOn:
+    text: "Check Out"
+    index: -1
+- extendedWaitUntil:
+    visible: "Check Out Photo"
+    timeout: 15000
+- takeScreenshot: field_27_checkout_selfie
+- extendedWaitUntil:
+    visible: "Field attendance complete"
+    timeout: 60000
+- assertVisible: "This attendance has been checked out and is now read-only.*"
+- takeScreenshot: field_28_checked_out

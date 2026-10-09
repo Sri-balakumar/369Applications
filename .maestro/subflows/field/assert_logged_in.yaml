@@ -1,0 +1,11 @@
+# Field flow step 1 - the app must already be logged in (as employee1).
+# Expo Go keeps the session, so we never clear state or log in here.
+appId: ${APP_ID}
+---
+- assertNotVisible:
+    text: "Enter Username or Email"
+    label: "Not logged in - log in as employee1 first"
+- extendedWaitUntil:
+    visible: "All Options|What are you looking for ?"
+    timeout: 20000
+- takeScreenshot: field_01_home
