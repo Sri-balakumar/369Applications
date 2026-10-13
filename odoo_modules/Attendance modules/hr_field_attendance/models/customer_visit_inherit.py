@@ -8,6 +8,8 @@ vehicle_tracking already depends on customer_visit.
 hr_field_attendance depends on both modules, so this is the safe place to
 bridge them.
 """
+import pytz
+
 from odoo import api, fields, models
 
 
@@ -23,6 +25,18 @@ class CustomerVisit(models.Model):
         'vehicle.tracking', string='Source Trip',
         compute='_compute_source_trip_id', store=False,
     )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        # Created from a trip card's "Add Visit" button: attach it to that
+        # trip line so the card shows it.
+        line_id = self.env.context.get('attach_to_trip_line_id')
+        if line_id and records:
+            line = self.env['field.attendance.trip.line'].browse(line_id).exists()
+            if line and not line.visit_id:
+                line.visit_id = records[0].id
+        return records
 
     @api.depends('employee_id', 'date_time')
     def _compute_source_trip_id(self):
@@ -40,8 +54,16 @@ class CustomerVisit(models.Model):
             if not partner_ids:
                 rec.source_trip_id = False
                 continue
-            trip = Tracking.search([
+            # Local day (not the UTC date — a 04:00 IST visit is still "today"),
+            # then the latest trip started at or before the visit; visits made
+            # before the day's first trip go to that first trip.
+            tz = pytz.timezone(emp.tz or 'UTC')
+            local_date = pytz.utc.localize(rec.date_time).astimezone(tz).date()
+            trips = Tracking.search([
                 ('driver_id', 'in', partner_ids),
-                ('date', '=', rec.date_time.date()),
-            ], limit=1)
+                ('date', '=', local_date),
+                ('trip_cancel', '=', False),
+            ], order='start_time asc, id asc')
+            started = trips.filtered(lambda t: t.start_time and t.start_time <= rec.date_time)
+            trip = started[-1:] or trips[:1]
             rec.source_trip_id = trip.id if trip else False

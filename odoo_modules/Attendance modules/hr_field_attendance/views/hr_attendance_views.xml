@@ -507,6 +507,14 @@
                                                     </t>
                                                     <t t-if="!record.visit_id.raw_value">
                                                         <div class="text-muted fst-italic">No visit attached</div>
+                                                        <!-- Add the customer visit for this trip (purpose pre-filled
+                                                             from the trip, like the app's Enter Visits). -->
+                                                        <button name="action_add_visit" type="object"
+                                                                class="btn btn-primary btn-sm mt-2"
+                                                                icon="fa-plus"
+                                                                invisible="attendance_checked_out">
+                                                            Add Visit
+                                                        </button>
                                                     </t>
                                                 </div>
                                             </div>
@@ -586,11 +594,12 @@
                                          so the trip context is established before the user attaches a visit. -->
                                     <group invisible="not trip_id">
                                         <group>
+                                            <field name="trip_purpose_id" invisible="1"/>
                                             <field name="visit_id"
                                                    required="trip_id"
                                                    readonly="trip_ended"
                                                    domain="[('state', '=', 'draft'), ('id', 'in', parent.available_visit_ids)]"
-                                                   context="{'list_view_ref': 'hr_field_attendance.view_customer_visit_picker', 'hide_done_visits': True, 'from_visit_picker': True}"
+                                                   context="{'list_view_ref': 'hr_field_attendance.view_customer_visit_picker', 'hide_done_visits': True, 'from_visit_picker': True, 'default_purpose_id': trip_purpose_id}"
                                                    options="{'no_quick_create': True}"/>
                                             <field name="visit_partner_id" invisible="not visit_id"/>
                                             <field name="visit_date_time_office" invisible="not visit_id"/>
@@ -861,11 +870,12 @@
                     <group invisible="not trip_id">
                         <group>
                             <field name="attendance_available_visit_ids" invisible="1"/>
+                            <field name="trip_purpose_id" invisible="1"/>
                             <field name="visit_id"
                                    required="trip_id"
                                    readonly="trip_ended"
                                    domain="[('state', '=', 'draft'), ('id', 'in', attendance_available_visit_ids)]"
-                                   context="{'list_view_ref': 'hr_field_attendance.view_customer_visit_picker', 'hide_done_visits': True, 'from_visit_picker': True}"
+                                   context="{'list_view_ref': 'hr_field_attendance.view_customer_visit_picker', 'hide_done_visits': True, 'from_visit_picker': True, 'default_purpose_id': trip_purpose_id}"
                                    options="{'no_quick_create': True}"/>
                             <field name="visit_partner_id" invisible="not visit_id"/>
                             <field name="visit_date_time_office" invisible="not visit_id"/>
@@ -992,10 +1002,11 @@
                     </div>
                     <group>
                         <group>
+                            <field name="previous_trip_end_km" invisible="1"/>
                             <field name="source_trip_id"
                                    readonly="source_trip_ended"
                                    domain="['|', '&amp;', ('trip_status', '=', 'draft'), ('id', 'in', available_trip_ids), ('id', '=', source_trip_id)]"
-                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'redirect_to_primary_setup_attendance_id': id}"/>
+                                   context="{'list_view_ref': 'hr_field_attendance.view_vehicle_tracking_picker', 'hide_ended_trips': True, 'redirect_to_primary_setup_attendance_id': id, 'default_start_km': previous_trip_end_km}"/>
                             <field name="source_trip_source_location" readonly="1"
                                    invisible="not source_trip_id"/>
                             <field name="source_trip_destination_location" readonly="1"

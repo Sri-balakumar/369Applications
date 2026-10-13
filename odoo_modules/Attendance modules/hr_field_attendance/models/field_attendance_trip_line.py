@@ -119,6 +119,10 @@ class FieldAttendanceTripLine(models.Model):
         'customer.visit', string='Visit',
         domain="[('state', '=', 'draft')]",
     )
+    # Trip's Purpose of Visit — passed as default_purpose_id to the visit
+    # picker so a visit created from the trip line gets it, like the app does.
+    trip_purpose_id = fields.Many2one(
+        related='trip_id.purpose_of_visit_id', string='Trip Purpose', readonly=True)
     # Legacy: kept for backward compat with pre-migration trip lines whose
     # visit selection lives in this M2M. New rows should use visit_id.
     visit_ids = fields.Many2many(
@@ -427,6 +431,28 @@ class FieldAttendanceTripLine(models.Model):
             'res_id': attendance.id,
             'view_mode': 'form',
             'target': 'current',
+        }
+
+    def action_add_visit(self):
+        """'Add Visit' on a trip card with no visit: open a new customer
+        visit pre-filled with the trip's purpose + the attendance employee
+        (like the app's Enter Visits). customer.visit.create links the saved
+        visit back to this line via `attach_to_trip_line_id`."""
+        self.ensure_one()
+        if self.visit_id:
+            raise UserError(_("This trip already has a visit."))
+        employee = self.attendance_id.employee_id
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Add Visit — %s') % (self.trip_id.ref or ''),
+            'res_model': 'customer.visit',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {
+                'default_employee_id': employee.id if employee else False,
+                'default_purpose_id': self.trip_purpose_id.id or False,
+                'attach_to_trip_line_id': self.id,
+            },
         }
 
     def action_view_visits(self):
