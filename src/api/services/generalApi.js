@@ -1121,12 +1121,23 @@ export const closePreviousTripOdoo = async (attendanceId, endKm, coords, endTime
     kwargs.end_time = endTime.toISOString().replace('T', ' ').replace(/\..*/, '');
   }
   console.log(FA_TAG, '→ closePreviousTrip', { attendanceId, endKm, ...kwargs });
-  const result = await _fieldRpc({
+  const call = (kw) => _fieldRpc({
     model: 'hr.attendance',
     method: 'field_action_close_previous_trip',
     args: [Number(attendanceId), Number(endKm) || 0],
-    kwargs,
+    kwargs: kw,
   });
+  let result;
+  try {
+    result = await call(kwargs);
+  } catch (e) {
+    // Servers without the hr_field_attendance upgrade don't accept end_time —
+    // retry without it (server stamps now) so closing a trip never breaks.
+    if (!kwargs.end_time || !/unexpected keyword argument 'end_time'/.test(e?.message || '')) throw e;
+    console.warn(FA_TAG, 'closePreviousTrip: server lacks end_time support, retrying without it');
+    const { end_time, ...rest } = kwargs;
+    result = await call(rest);
+  }
   console.log(FA_TAG, '← closePreviousTrip', result);
   return result || {};
 };
