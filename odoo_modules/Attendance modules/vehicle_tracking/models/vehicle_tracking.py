@@ -240,7 +240,7 @@ class VehicleTracking(models.Model):
             emp = Employee.search([('address_home_id', '=', self.driver_id.id)], limit=1)
         return emp
 
-    @api.depends('driver_id', 'date')
+    @api.depends('driver_id', 'date', 'start_time', 'trip_cancel')
     def _compute_visit_ids(self):
         """Stops on this trip = union of two sources:
 
@@ -273,7 +273,12 @@ class VehicleTracking(models.Model):
                 for att in attendances:
                     visit_ids.update(att.source_visit_ids.ids)
 
-            # Source 2: same-day visits for the driver's resolved employee
+            # Source 2: the driver's visits inside THIS trip's window on its
+            # local day. A visit belongs to the latest trip started at or
+            # before it, so the window runs from this trip's start to the
+            # next same-day trip's start (first trip from midnight, last to
+            # end of day). Without this every trip of a multi-trip day listed
+            # all of that day's visits.
             employee = rec._resolve_employee_from_driver()
             if employee and rec.date:
                 tz = pytz.timezone(employee.tz or 'UTC')
@@ -281,6 +286,20 @@ class VehicleTracking(models.Model):
                 local_end = local_start + timedelta(days=1)
                 utc_start = local_start.astimezone(pytz.utc).replace(tzinfo=None)
                 utc_end = local_end.astimezone(pytz.utc).replace(tzinfo=None)
+                if rec.id and rec.start_time and not rec.trip_cancel:
+                    day_trips = self.sudo().search([
+                        ('driver_id', '=', rec.driver_id.id),
+                        ('date', '=', rec.date),
+                        ('trip_cancel', '=', False),
+                        ('start_time', '!=', False),
+                    ], order='start_time asc, id asc')
+                    ids = day_trips.ids
+                    if rec.id in ids:
+                        idx = ids.index(rec.id)
+                        if idx > 0:
+                            utc_start = max(utc_start, rec.start_time)
+                        if idx + 1 < len(ids):
+                            utc_end = min(utc_end, day_trips[idx + 1].start_time)
                 visits = Visit.search([
                     ('employee_id', '=', employee.id),
                     ('date_time', '>=', utc_start),
@@ -431,7 +450,10 @@ class VehicleTracking(models.Model):
             # Default image_filename when the app sends image_url without one.
             if vals.get('image_url') and not vals.get('image_filename'):
                 vals['image_filename'] = 'trip_image.jpg'
-        return super(VehicleTracking, self).create(vals_list)
+        records = super(VehicleTracking, self).create(vals_list)
+        # A new trip splits the day's visit windows of the driver's other trips.
+        records._resync_day_visit_links()
+        return records
 
     # Fields that lifecycle buttons (End / Cancel / Reset to Draft) are allowed
     # to change even on a finalized record. Anything else is locked.
@@ -464,7 +486,30 @@ class VehicleTracking(models.Model):
         # Default image_filename when the app sends image_url without one.
         if 'image_url' in vals and vals.get('image_url') and not vals.get('image_filename'):
             vals['image_filename'] = 'trip_image.jpg'
-        return super(VehicleTracking, self).write(vals)
+        window_keys = {'start_time', 'start_trip', 'trip_cancel', 'driver_id', 'date'}
+        old_days = self._day_keys() if window_keys & set(vals) else set()
+        res = super(VehicleTracking, self).write(vals)
+        if old_days:
+            # Starting/cancelling/moving a trip shifts which visits fall in
+            # each same-day trip's window — refresh them all.
+            self._resync_day_visit_links(old_days | self._day_keys())
+        return res
+
+    def _day_keys(self):
+        return {(r.driver_id.id, r.date) for r in self if r.driver_id and r.date}
+
+    def _resync_day_visit_links(self, day_keys=None):
+        """Recompute visit_ids (+ display/count) on every trip of the given
+        (driver, date) days. Goes through the recompute queue, so finalized
+        trips are refreshed without tripping the write() lock guard."""
+        fnames = ['visit_ids', 'visited_stops_display', 'visited_stop_count']
+        for driver_id, day in (day_keys if day_keys is not None else self._day_keys()):
+            trips = self.sudo().search([('driver_id', '=', driver_id), ('date', '=', day)])
+            if not trips:
+                continue
+            for fname in fnames:
+                self.env.add_to_compute(trips._fields[fname], trips)
+            trips._recompute_recordset(fnames)
 
     def action_add_fuel_log(self):
         self.ensure_one()

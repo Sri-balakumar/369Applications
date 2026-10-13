@@ -218,9 +218,14 @@ class CustomerVisit(models.Model):
                 ])
                 if not trips:
                     continue
-                trips._compute_visit_ids()
-                trips._compute_visited_stops_display()
-                trips._compute_visited_stop_count()
+                # Recompute queue (not a plain write) so ended/finalized trips
+                # refresh too instead of hitting their write() lock guard.
+                if hasattr(trips, '_resync_day_visit_links'):
+                    trips._resync_day_visit_links()
+                else:
+                    trips._compute_visit_ids()
+                    trips._compute_visited_stops_display()
+                    trips._compute_visited_stop_count()
                 trips.flush_recordset()
         except Exception:
             _logger.exception("[customer.visit] post-unlink vehicle.tracking sync failed")
@@ -261,9 +266,14 @@ class CustomerVisit(models.Model):
             ])
             if not trips:
                 continue
-            trips._compute_visit_ids()
-            trips._compute_visited_stops_display()
-            trips._compute_visited_stop_count()
+            # Recompute queue (not a plain write) so ended/finalized trips
+            # refresh too instead of hitting their write() lock guard.
+            if hasattr(trips, '_resync_day_visit_links'):
+                trips._resync_day_visit_links()
+            else:
+                trips._compute_visit_ids()
+                trips._compute_visited_stops_display()
+                trips._compute_visited_stop_count()
             trips.flush_recordset()
 
     def action_done(self):
