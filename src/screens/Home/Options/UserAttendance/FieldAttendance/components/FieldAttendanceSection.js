@@ -473,11 +473,14 @@ const FieldAttendanceSection = ({
 
   const lastOpenTripInfo = () => {
     if (!state) return null;
-    const all = [
-      ...(state.trip_lines || []).map((l) => l.trip),
-      ...(state.return_lines || []).map((l) => l.trip),
-    ].filter(Boolean);
-    const lastFromLines = all.length ? all[all.length - 1] : null;
+    // Latest line across outbound AND return lines by (sequence, id) — the
+    // server's _last_trip_line order. Plain concatenation put every return
+    // leg after every outbound line, so a Primary (return) trip started after
+    // an Additional trip took its Start KM from an older return leg.
+    const lines = [...(state.trip_lines || []), ...(state.return_lines || [])]
+      .filter((l) => l && l.trip)
+      .sort((a, b) => ((a.sequence || 0) - (b.sequence || 0)) || ((a.id || 0) - (b.id || 0)));
+    const lastFromLines = lines.length ? lines[lines.length - 1].trip : null;
     const t = lastFromLines || state.source_trip;
     if (!t) return null;
     const ended = t.trip_status === 'ended' || t.end_time;

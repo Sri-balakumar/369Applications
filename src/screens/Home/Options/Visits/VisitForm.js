@@ -128,7 +128,13 @@ const VisitForm = ({ navigation, route }) => {
           ...prev,
           customer: detail.customer ? { id: detail.customer.id, label: detail.customer.name } : '',
           visitedBy: detail.employee ? { id: detail.employee.id, label: detail.employee.name } : '',
-          dateAndTime: detail.visit_date ? new Date(detail.visit_date) : new Date(),
+          // Odoo sends UTC "YYYY-MM-DD HH:MM:SS" with no zone marker — parse
+          // as UTC (plain new Date() reads it as local / Invalid Date).
+          dateAndTime: (() => {
+            if (!detail.visit_date) return new Date();
+            const d = new Date(String(detail.visit_date).replace(' ', 'T') + 'Z');
+            return Number.isNaN(d.getTime()) ? new Date() : d;
+          })(),
           visitPurpose: detail.purpose ? { id: detail.purpose.id, label: detail.purpose.name } : '',
           remarks: detail.remarks || '',
         }));
@@ -810,6 +816,10 @@ const VisitForm = ({ navigation, route }) => {
     if (validateForm(fieldsToValidate)) {
       setIsSubmitting(true);
       try {
+        // Stamp the visit at the Save tap, not when the form was opened, so
+        // GPS / photo / remarks time before saving isn't hidden in the record.
+        const savedAt = new Date();
+        setFormData(prev => ({ ...prev, dateAndTime: savedAt }));
         const payload = {
           customerId: formData.customer?.id,
           customerName: formData.customer?.label || formData.customer?.name || '',
@@ -818,9 +828,7 @@ const VisitForm = ({ navigation, route }) => {
           // Send UTC: Odoo stores datetimes as UTC and converts on display.
           // formatDate(local, 'yyyy-MM-dd HH:mm:ss') would send local time
           // which Odoo would then re-interpret as UTC, shifting the time.
-          dateTime: formData.dateAndTime
-            ? formData.dateAndTime.toISOString().slice(0, 19).replace('T', ' ')
-            : null,
+          dateTime: savedAt.toISOString().slice(0, 19).replace('T', ' '),
           purposeId: formData.visitPurpose?.id || false,
           visitDuration: formData.visitDuration?.id || false,
           remarks: formData.remarks || '',
