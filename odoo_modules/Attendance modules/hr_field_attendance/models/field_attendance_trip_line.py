@@ -325,7 +325,7 @@ class FieldAttendanceTripLine(models.Model):
             if trip and not trip.start_trip and not trip.trip_cancel and trip.start_km > 0:
                 trip.write({
                     'start_trip': True,
-                    'start_time': trip.start_time or fields.Datetime.now(),
+                    'start_time': fields.Datetime.now(),  # stamp the real Start moment, not the draft's create time
                 })
             visit = rec.visit_id
             if visit and visit.state == 'draft':

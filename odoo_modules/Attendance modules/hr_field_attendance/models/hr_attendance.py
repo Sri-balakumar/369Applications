@@ -945,7 +945,7 @@ class HrAttendance(models.Model):
             if trip.start_km > 0:
                 trip.write({
                     'start_trip': True,
-                    'start_time': trip.start_time or fields.Datetime.now(),
+                    'start_time': fields.Datetime.now(),  # stamp the real Start moment, not the draft's create time
                 })
 
     def _on_checkout_finalize_trips_and_visits(self):
@@ -1400,10 +1400,13 @@ class HrAttendance(models.Model):
 
     @api.model
     def field_action_close_previous_trip(self, attendance_id, end_km,
-                                         end_latitude=None, end_longitude=None):
+                                         end_latitude=None, end_longitude=None,
+                                         end_time=None):
         """Close the latest open trip on this attendance. End KM must be
         > Start KM. Mirrors the web close-previous-trip dialog. The app sends
-        the phone's GPS at close time as end_latitude / end_longitude."""
+        the phone's GPS at close time as end_latitude / end_longitude, and
+        end_time = the moment the driver opened the End KM sheet (arrival),
+        so odometer entry / GPS-check time isn't counted as drive time."""
         # Let an "Over" trip end here; the mobile app prompts for the
         # deviation reason right after (the constraint stays enforced on the web).
         self = self.with_context(skip_deviation_reason_required=True)
@@ -1433,7 +1436,7 @@ class HrAttendance(models.Model):
         vals = {
             'end_km': end_km_int,
             'end_trip': True,
-            'end_time': trip.end_time or fields.Datetime.now(),
+            'end_time': trip.end_time or trip._app_end_time(end_time),
         }
         vals.update(trip._end_gps_vals(end_latitude, end_longitude))
         trip.write(vals)

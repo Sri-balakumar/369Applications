@@ -879,7 +879,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
   const NON_DIRTY_FIELDS = new Set([
     'startTrip', 'endTrip', 'isTripStarted', 'tripStatus', 'cancelTrip',
     'startLatitude', 'startLongitude', 'endLatitude', 'endLongitude',
-    'start_latitude', 'start_longitude', 'travelledKM',
+    'start_latitude', 'start_longitude', 'travelledKM', 'startTimeManual',
   ]);
 
   const handleInputChange = (field, value) => {
@@ -3251,7 +3251,16 @@ const VehicleTrackingForm = ({ navigation, route }) => {
                           }
                         }
                       }
-                      setFormData(prev => ({ ...prev, startTrip: true, endTrip: false }));
+                      // Stamp start_time at the Start tap. Before this it held the
+                      // form-open (or draft-save) time, so form-filling and GPS
+                      // waits were counted as drive time. A time picked manually
+                      // in the Start Time picker is kept.
+                      setFormData(prev => ({
+                        ...prev,
+                        startTrip: true,
+                        endTrip: false,
+                        startTime: prev.startTimeManual ? prev.startTime : new Date(),
+                      }));
                       setPendingSubmit('start');
                     }}
                     loading={(isSubmitting && activeAction === 'start') || sourceVerifying}
@@ -3397,6 +3406,7 @@ const VehicleTrackingForm = ({ navigation, route }) => {
         mode="datetime"
         onConfirm={(time) => {
           handleInputChange('startTime', time);
+          setFormData(prev => ({ ...prev, startTimeManual: true }));
           setIsStartTimePickerVisible(false);
         }}
         onCancel={() => setIsStartTimePickerVisible(false)}

@@ -284,6 +284,8 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   const [faRefreshTick, setFaRefreshTick] = useState(0);
   const [endKmPromptVisible, setEndKmPromptVisible] = useState(false);
   const [endKmPromptTripId, setEndKmPromptTripId] = useState(null);
+  // When the add-line End KM prompt opened (arrival) → sent as the trip end_time.
+  const endKmPromptOpenedAtRef = useRef(null);
   const [endKmPromptTripRef, setEndKmPromptTripRef] = useState('');
   const [endKmPromptValue, setEndKmPromptValue] = useState('');
 
@@ -995,6 +997,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
           saving: false,
           destCoords: dc.destCoords,
           destName: dc.destName,
+          openedAt: new Date(), // arrival → trip end_time
         });
         return;
       }
@@ -1037,6 +1040,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
               saving: false,
               destCoords: dc.destCoords,
               destName: dc.destName,
+              openedAt: new Date(), // arrival → trip end_time
             });
             return;
           }
@@ -1109,6 +1113,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
           saving: false,
           destCoords: dc.destCoords,
           destName: dc.destName,
+          openedAt: new Date(), // arrival → trip end_time
         });
       })();
       return;
@@ -1142,7 +1147,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     });
     setEndKmPrompt((s) => ({ ...s, saving: true }));
     try {
-      await endVehicleTripFromAttendanceOdoo(endKmPrompt.tripId, null, n, endCoords);
+      await endVehicleTripFromAttendanceOdoo(endKmPrompt.tripId, endKmPrompt.openedAt || null, n, endCoords);
       console.log('[UA-CHECKOUT]   trip ended OK → bulk-marking visits done');
       // Clear the pending-secondary-trip marker (if any) since the trip
       // is now closed on the server. Harmless when no marker exists.
@@ -1379,6 +1384,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       setEndKmPromptTripId(prevTripId);
       setEndKmPromptTripRef(prevTripRef || `#${prevTripId}`);
       setEndKmPromptValue('');
+      endKmPromptOpenedAtRef.current = new Date();
       setEndKmPromptVisible(true);
       return;
     }
@@ -1392,7 +1398,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
     setEndKmPromptVisible(false);
     setFieldBusy(true);
     try {
-      await endVehicleTripFromAttendanceOdoo(endKmPromptTripId, undefined, endKmStr);
+      await endVehicleTripFromAttendanceOdoo(endKmPromptTripId, endKmPromptOpenedAtRef.current || undefined, endKmStr);
       await refreshFieldDetail(fieldData.attendance_id);
       setAddLineOpen(true);
     } catch (e) {

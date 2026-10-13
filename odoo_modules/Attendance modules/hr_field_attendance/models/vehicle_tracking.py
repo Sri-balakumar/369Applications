@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from datetime import timedelta
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, ValidationError
 
@@ -133,13 +134,32 @@ class VehicleTracking(models.Model):
             skip_deviation_reason_required=True, skip_auto_end_trip=True)
         if not trip.exists():
             return {'error': 'not_found'}
-        vals = {'end_trip': True, 'end_time': end_time or fields.Datetime.now()}
+        vals = {'end_trip': True, 'end_time': trip._app_end_time(end_time)}
         if end_km not in (None, ''):
             vals['end_km'] = int(end_km)
         vals.update(trip._end_gps_vals(end_latitude, end_longitude))
         trip.write(vals)
         trip.flush_recordset()
         return {'success': True}
+
+    def _app_end_time(self, end_time):
+        """End time sent by the app (UTC 'YYYY-MM-DD HH:MM:SS' or ISO), taken
+        when the driver opened the End KM sheet. Falls back to now when it's
+        missing, unparseable, before the trip's start, or in the future (bad
+        phone clock)."""
+        now = fields.Datetime.now()
+        if not end_time:
+            return now
+        try:
+            value = fields.Datetime.to_datetime(
+                str(end_time).replace('T', ' ').replace('Z', '')[:19])
+        except (TypeError, ValueError):
+            return now
+        # Allow a couple of minutes of phone-vs-server clock drift.
+        if not value or value > now + timedelta(minutes=2) \
+                or (self.start_time and value < self.start_time):
+            return now
+        return min(value, now)
 
     def _check_start_km_for_picker_flow(self):
         """Block save when a draft trip is being persisted from the

@@ -1112,9 +1112,14 @@ export const getFieldAttendanceStateOdoo = async (attendanceId) => {
 
 // `coords` ({latitude, longitude}) is the phone's GPS at close time — stored
 // as the closed trip's end location (the only arrival point for return legs).
-export const closePreviousTripOdoo = async (attendanceId, endKm, coords) => {
+// `endTime` (Date) = when the driver opened the End KM sheet, i.e. arrival, so
+// odometer entry and GPS-check time aren't counted as drive time.
+export const closePreviousTripOdoo = async (attendanceId, endKm, coords, endTime) => {
   if (!attendanceId) throw new Error('attendanceId is required');
   const kwargs = _endGpsKwargs(coords);
+  if (endTime instanceof Date && !Number.isNaN(endTime.getTime())) {
+    kwargs.end_time = endTime.toISOString().replace('T', ' ').replace(/\..*/, '');
+  }
   console.log(FA_TAG, '→ closePreviousTrip', { attendanceId, endKm, ...kwargs });
   const result = await _fieldRpc({
     model: 'hr.attendance',

@@ -563,7 +563,8 @@ const FieldAttendanceSection = ({
         console.warn(TAG, '  hydrate start_km failed, using state value:', e?.message);
       }
       console.log(TAG, '  → opening Close Previous Trip sheet first', { destCoords, destName });
-      setClosePrevMeta({ ref: prev.ref, startKm: actualStartKm, destCoords, destName });
+      // openedAt = arrival moment → sent as the trip's end_time (not the Save time).
+      setClosePrevMeta({ ref: prev.ref, startKm: actualStartKm, destCoords, destName, openedAt: new Date() });
       setPendingNextAction(nextAction);
       setClosePrevOpen(true);
       return;
@@ -925,7 +926,7 @@ const FieldAttendanceSection = ({
     console.log(TAG, 'handleClosePreviousTrip start', { endKm, endCoords });
     setBusy(true);
     try {
-      const res = await closePreviousTripOdoo(attendanceId, endKm, endCoords);
+      const res = await closePreviousTripOdoo(attendanceId, endKm, endCoords, closePrevMeta.openedAt);
       if (res?.error) {
         console.warn(TAG, 'closePreviousTrip error:', res.error);
         // Belt-and-braces: when the server tells us the real start_km in the
@@ -1171,6 +1172,7 @@ const FieldAttendanceSection = ({
       isOpen: prev?.isOpen ?? true,
       destCoords,
       destName,
+      openedAt: new Date(),
     });
     setPendingNextAction('checkout');
     setClosePrevOpen(true);

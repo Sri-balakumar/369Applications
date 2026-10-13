@@ -532,7 +532,7 @@ class VehicleTracking(models.Model):
         self.write({
             'start_trip': True,
             'fuel_checking': True,
-            'start_time': self.start_time or fields.Datetime.now(),
+            'start_time': fields.Datetime.now(),  # stamp the real Start moment, not the draft's create time
         })
         # Returning None lets Odoo's web client refresh the record in place
         # — fastest path so the buttons' invisible expressions re-evaluate
