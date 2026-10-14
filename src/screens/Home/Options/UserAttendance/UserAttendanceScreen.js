@@ -2502,10 +2502,23 @@ const UserAttendanceScreen = ({ navigation, route }) => {
         return;
       }
 
-      const result = await checkOutToOdoo(todayAttendance.id);
+      // Re-read the open record right before writing check_out: the one held in
+      // state may have been deleted / re-created on the Odoo web since the
+      // screen loaded, and writing to a deleted id fails.
+      let attendanceId = todayAttendance.id;
+      try {
+        const fresh = await getTodayAttendanceByEmployeeId(verifiedEmployee.id, verifiedEmployee.name);
+        if (fresh?.id && !fresh.checkOut && fresh.id !== attendanceId) {
+          console.log('[Attendance] Open record changed on server:', attendanceId, '->', fresh.id);
+          attendanceId = fresh.id;
+          setTodayAttendance(prev => prev ? { ...prev, ...fresh } : fresh);
+        }
+      } catch (_) { /* keep the id we have */ }
+
+      const result = await checkOutToOdoo(attendanceId);
       if (result.success) {
         if (photoBase64) {
-          const uploadResult = await uploadAttendancePhoto(todayAttendance.id, photoBase64, 'check_out');
+          const uploadResult = await uploadAttendancePhoto(attendanceId, photoBase64, 'check_out');
           if (uploadResult.success) {
             console.log('[Attendance] Check-out photo uploaded successfully');
           }
@@ -2550,7 +2563,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
           if (online && verifiedEmployee?.id) {
             const lateResult = await getTodayAttendanceWithLateInfo(verifiedEmployee.id);
             if (lateResult?.success && lateResult.records?.length > 0) {
-              const rec = lateResult.records.find(r => r.id === todayAttendance?.id)
+              const rec = lateResult.records.find(r => r.id === attendanceId)
                        || lateResult.records[lateResult.records.length - 1];
               if (rec) {
                 setTodayAttendance(prev => prev ? {

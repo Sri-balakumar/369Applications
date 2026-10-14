@@ -1225,6 +1225,12 @@ export const checkOutToOdoo = async (attendanceId) => {
 
     console.log('[Attendance] Check-out response:', JSON.stringify(response.data, null, 2));
 
+    if (response.data?.error) {
+      const errMsg = response.data.error.data?.message || 'Failed to update attendance record';
+      console.error('[Attendance] Odoo error:', errMsg);
+      return { success: false, error: errMsg };
+    }
+
     if (response.data?.result) {
       return {
         success: true,
