@@ -1105,10 +1105,16 @@ class HrAttendance(models.Model):
         """Inspect today's field attendance for the given employee.
 
         State machine (mobile app uses these statuses verbatim):
-          'eligible'         — no attendance today; ready to tap Check In
+          'eligible'         — nothing open and nothing in the current session
+                               today; ready to tap Check In
           'checked_in_open'  — field attendance exists, check_out is False
           'checked_out'      — field attendance exists, check_out is set
           'manual_exists'    — non-field attendance already exists today
+
+        Checked per session (see _field_blocking_attendance): after a
+        Session-1 check-out, a split-shift employee is 'eligible' again once
+        Session 2 starts. Every response also carries `checkin_session` and
+        `session2_start` (see _field_session_info).
 
         Trips/visits are no longer required to reach 'eligible'; the user
         can check in first and pick a trip / link visits later via Edit
@@ -1121,72 +1127,76 @@ class HrAttendance(models.Model):
 
         self._check_field_attendance_access(employee)
 
-        utc_start, utc_end, _ = self._employee_today_window(employee)
+        session_info = self._field_session_info(employee)
+        blocking = self._field_blocking_attendance(employee, session_info['checkin_session'])
 
-        Attendance = self.env['hr.attendance'].sudo()
-        existing = Attendance.search([
-            ('employee_id', '=', employee.id),
-            ('check_in', '>=', utc_start),
-            ('check_in', '<', utc_end),
-        ], limit=1, order='check_in asc')
-
-        if existing:
-            if existing.attendance_source == 'field':
-                return {
-                    'status': 'checked_out' if existing.check_out else 'checked_in_open',
-                    'trip': self._serialize_trip(existing.source_trip_id) if existing.source_trip_id else None,
-                    'visits': [self._serialize_visit(v) for v in existing.source_visit_ids],
-                    'attendance_id': existing.id,
-                    'check_in': str(existing.check_in) if existing.check_in else None,
-                    'check_out': str(existing.check_out) if existing.check_out else None,
+        if blocking:
+            if blocking.attendance_source == 'field':
+                result = {
+                    'status': 'checked_out' if blocking.check_out else 'checked_in_open',
+                    'trip': self._serialize_trip(blocking.source_trip_id) if blocking.source_trip_id else None,
+                    'visits': [self._serialize_visit(v) for v in blocking.source_visit_ids],
                 }
-            return {
-                'status': 'manual_exists',
+            else:
+                result = {'status': 'manual_exists', 'trip': None, 'visits': []}
+            result.update({
+                'attendance_id': blocking.id,
+                'check_in': str(blocking.check_in) if blocking.check_in else None,
+                'check_out': str(blocking.check_out) if blocking.check_out else None,
+            })
+        else:
+            result = {
+                'status': 'eligible',
                 'trip': None,
                 'visits': [],
-                'attendance_id': existing.id,
-                'check_in': str(existing.check_in) if existing.check_in else None,
-                'check_out': str(existing.check_out) if existing.check_out else None,
+                'attendance_id': None,
+                'check_in': None,
+                'check_out': None,
             }
+        result.update(session_info)
+        return result
 
-        # No record dated today — but a session checked in on a PREVIOUS day may
-        # still be open (checked in late, never checked out, clock rolled past
-        # midnight). Odoo's attendance_state is driven by the last record's
-        # open/closed status, not the calendar date, so we must keep offering
-        # Check Out for that carried-over record instead of resetting to
-        # 'eligible' (Check In) — which would strand the open row and let the
-        # user create an overlapping duplicate.
+    def _field_session_info(self, employee):
+        """Session the employee would check in to right now, decided by the
+        same clock-time rule as hr_attendance_late (_compute_is_first_checkin_of_day)
+        on an unsaved record. `session2_start` is set only while a split-shift
+        Session 2 is still ahead, so the app can say when it opens."""
+        rec = self.env['hr.attendance'].sudo().new({
+            'employee_id': employee.id,
+            'check_in': fields.Datetime.now(),
+        })
+        rec._compute_is_first_checkin_of_day()
+        session = rec.checkin_session or '1'
+        config = self.env['hr.attendance.late.config'].get_config_for_employee(employee.id)
+        session2_start = None
+        if config.get('shift_type') == 'split' and session == '1':
+            session2_start = config.get('office_start_hour_2')
+        return {'checkin_session': session, 'session2_start': session2_start}
+
+    def _field_blocking_attendance(self, employee, session):
+        """The attendance that stops a new field check-in right now, if any.
+
+        One check-in per SESSION (split shift: Session 2 opens again after a
+        Session-1 check-out; single shift has only Session 1, so one per day):
+          1. Any OPEN record, from any day — a session checked in yesterday and
+             never checked out must keep offering Check Out instead of letting
+             the user create an overlapping duplicate.
+          2. Today's record (office-timezone day) in the CURRENT session.
+        """
+        Attendance = self.env['hr.attendance'].sudo()
         open_att = Attendance.search([
             ('employee_id', '=', employee.id),
             ('check_out', '=', False),
         ], limit=1, order='check_in desc')
         if open_att:
-            if open_att.attendance_source == 'field':
-                return {
-                    'status': 'checked_in_open',
-                    'trip': self._serialize_trip(open_att.source_trip_id) if open_att.source_trip_id else None,
-                    'visits': [self._serialize_visit(v) for v in open_att.source_visit_ids],
-                    'attendance_id': open_att.id,
-                    'check_in': str(open_att.check_in) if open_att.check_in else None,
-                    'check_out': None,
-                }
-            return {
-                'status': 'manual_exists',
-                'trip': None,
-                'visits': [],
-                'attendance_id': open_att.id,
-                'check_in': str(open_att.check_in) if open_att.check_in else None,
-                'check_out': None,
-            }
-
-        return {
-            'status': 'eligible',
-            'trip': None,
-            'visits': [],
-            'attendance_id': None,
-            'check_in': None,
-            'check_out': None,
-        }
+            return open_att
+        utc_start, utc_end, _ = self._employee_today_window(employee)
+        return Attendance.search([
+            ('employee_id', '=', employee.id),
+            ('check_in', '>=', utc_start),
+            ('check_in', '<', utc_end),
+            ('checkin_session', '=', session),
+        ], limit=1, order='check_in desc')
 
     @api.model
     def start_field_attendance(self, employee_id, late_reason=None):
@@ -1206,21 +1216,18 @@ class HrAttendance(models.Model):
         utc_start, utc_end, local_date = self._employee_today_window(employee)
 
         Attendance = self.env['hr.attendance'].sudo()
-        existing = Attendance.search([
-            ('employee_id', '=', employee.id),
-            ('check_in', '>=', utc_start),
-            ('check_in', '<', utc_end),
-        ], limit=1)
+        session = self._field_session_info(employee)['checkin_session']
+        existing = self._field_blocking_attendance(employee, session)
         if existing:
-            if existing.attendance_source == 'field':
-                return {
-                    'success': False,
-                    'error': _('Field attendance already started today.'),
-                    'attendance_id': existing.id,
-                }
+            if not existing.check_out:
+                error = _('Please check out of your current attendance first.')
+            elif existing.attendance_source == 'field':
+                error = _('Field attendance for Session %s is already done today.') % session
+            else:
+                error = _('Manual attendance already exists for Session %s today.') % session
             return {
                 'success': False,
-                'error': _('Manual attendance already exists for today.'),
+                'error': error,
                 'attendance_id': existing.id,
             }
 

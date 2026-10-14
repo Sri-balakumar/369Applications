@@ -4124,7 +4124,10 @@ const UserAttendanceScreen = ({ navigation, route }) => {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), backgroundColor: '#E8F5E9', borderRadius: scale(12), padding: scale(14), marginTop: scale(16), borderLeftWidth: 4, borderLeftColor: '#2E7D32' }}>
                 <MaterialIcons name="check-circle" size={scale(22)} color="#2E7D32" />
                 <Text style={{ flex: 1, fontSize: scale(13), fontFamily: FONT_FAMILY.urbanistBold, color: '#1B5E20' }}>
-                  Field attendance complete
+                  {/* Split shift: the server re-opens Field check-in once Session 2 starts. */}
+                  {fieldData?.session2_start != null
+                    ? `Session 1 complete. Check in again for Session 2 from ${floatToHM(fieldData.session2_start)}`
+                    : 'Field attendance complete'}
                 </Text>
               </View>
             )}

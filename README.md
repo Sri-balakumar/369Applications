@@ -136,7 +136,7 @@ eas build -p android --profile preview4     # internal distribution
 eas build -p android --profile production
 ```
 
-Current release: **v1.0.89**, Android package `com.danat.alphalize`.
+Current release: **v1.0.90**, Android package `com.danat.alphalize`.
 
 ## Project structure
 
