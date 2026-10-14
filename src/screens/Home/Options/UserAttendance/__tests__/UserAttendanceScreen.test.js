@@ -90,3 +90,30 @@ describe('UserAttendanceScreen — late-reason state machine', () => {
     expect(screenText).toContain('pendingLateAttendanceId');
   });
 });
+
+describe('UserAttendanceScreen — check-out uses the current server record', () => {
+  // processCheckOut body, up to the next top-level handler.
+  const start = screenText.indexOf('const processCheckOut = async');
+  const body = screenText.slice(start, screenText.indexOf('\n  const ', start + 10));
+
+  test('re-reads today\'s attendance before writing check_out', () => {
+    const reread = body.indexOf('getTodayAttendanceByEmployeeId(verifiedEmployee.id');
+    const write = body.indexOf('checkOutToOdoo(');
+    expect(reread).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(reread);
+  });
+
+  test('only switches to an OPEN record that differs from the one on screen', () => {
+    expect(body).toMatch(/fresh\?\.id && !fresh\.checkOut && fresh\.id !== attendanceId/);
+  });
+
+  test('check-out write and photo upload both use the re-read id', () => {
+    expect(body).toContain('checkOutToOdoo(attendanceId)');
+    expect(body).toContain("uploadAttendancePhoto(attendanceId, photoBase64, 'check_out')");
+    expect(body).not.toContain('checkOutToOdoo(todayAttendance.id)');
+  });
+
+  test("shows the service's error message when check-out fails", () => {
+    expect(body).toContain("showAlert({ message: result.error || 'Check-out failed' })");
+  });
+});

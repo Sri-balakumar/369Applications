@@ -460,3 +460,126 @@ describe('AttendanceService — checkInToOdoo includes late_reason placeholder',
     }
   });
 });
+
+describe('AttendanceService — checkOutToOdoo', () => {
+  let mock;
+  beforeEach(() => { mock = new MockAdapter(axios); });
+  afterEach(() => { mock.restore(); });
+
+  test('writes check_out on the given attendance id', async () => {
+    mock.onPost(/\/web\/dataset\/call_kw/).reply(200, { result: true });
+    const result = await Service.checkOutToOdoo(42);
+    expect(result.success).toBe(true);
+    expect(result.checkOutTimeUtc).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const sent = JSON.parse(mock.history.post[0].data);
+    expect(sent.params.model).toBe('hr.attendance');
+    expect(sent.params.method).toBe('write');
+    expect(sent.params.args[0]).toEqual([42]);
+    expect(Object.keys(sent.params.args[1])).toEqual(['check_out']);
+  });
+
+  test("returns Odoo's real error message instead of the generic one", async () => {
+    mock.onPost(/\/web\/dataset\/call_kw/).reply(200, {
+      error: { data: { message: 'Record does not exist or has been deleted.' } },
+    });
+    const result = await Service.checkOutToOdoo(42);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Record does not exist or has been deleted.');
+  });
+
+  test('falls back to the generic message when Odoo sends no message', async () => {
+    mock.onPost(/\/web\/dataset\/call_kw/).reply(200, { error: { data: {} } });
+    const result = await Service.checkOutToOdoo(42);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Failed to update attendance record');
+  });
+
+  test('handles network failure gracefully', async () => {
+    mock.onPost(/\/web\/dataset\/call_kw/).networkError();
+    const result = await Service.checkOutToOdoo(42);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('AttendanceService — check-out after the record is changed on the web', () => {
+  // Small in-memory Odoo: hr.attendance rows keyed by id. search_read returns
+  // the employee's rows (open-only for the date-agnostic fallback query);
+  // write on a missing id fails the way Odoo does for a deleted record.
+  let mock;
+  let rows;
+  const EMP = 5;
+
+  beforeEach(() => {
+    mock = new MockAdapter(axios);
+    rows = {};
+    mock.onPost(/\/web\/dataset\/call_kw/).reply((config) => {
+      const { method, args } = JSON.parse(config.data).params;
+      if (method === 'search_read') {
+        const isTodayQuery = String(config.data).includes('00:00:00');
+        const list = Object.values(rows)
+          .filter(r => r.employee_id[0] === EMP && (isTodayQuery || !r.check_out))
+          .sort((a, b) => (a.check_in < b.check_in ? 1 : -1));
+        return [200, { result: list }];
+      }
+      if (method === 'write') {
+        const [ids, vals] = args;
+        if (ids.some(id => !rows[id])) {
+          return [200, { error: { data: { message: 'Record does not exist or has been deleted.' } } }];
+        }
+        ids.forEach(id => Object.assign(rows[id], vals));
+        return [200, { result: true }];
+      }
+      return [200, { result: [] }];
+    });
+  });
+  afterEach(() => { mock.restore(); });
+
+  const webCreate = (id, checkIn) => {
+    rows[id] = { id, employee_id: [EMP, 'Thanzeeh'], check_in: checkIn, check_out: false };
+  };
+
+  test('re-reading before check-out closes the NEW record', async () => {
+    // 1. Employee checks in once; the screen loads record 100.
+    webCreate(100, '2026-10-14 05:31:00');
+    const loaded = await Service.getTodayAttendanceByEmployeeId(EMP, 'Thanzeeh');
+    expect(loaded.id).toBe(100);
+
+    // 2. HR deletes it on the web and adds a new one.
+    delete rows[100];
+    webCreate(200, '2026-10-14 05:30:00');
+
+    // 3. Re-read (what processCheckOut now does) picks up the new record...
+    const fresh = await Service.getTodayAttendanceByEmployeeId(EMP, 'Thanzeeh');
+    expect(fresh.id).toBe(200);
+    expect(fresh.checkOut).toBeNull();
+
+    // ...and check-out on it succeeds and lands on the new record.
+    const result = await Service.checkOutToOdoo(fresh.id);
+    expect(result.success).toBe(true);
+    expect(rows[200].check_out).toBe(result.checkOutTimeUtc);
+  });
+
+  test('checking out the stale id shows the real reason (old bug)', async () => {
+    webCreate(100, '2026-10-14 05:31:00');
+    const loaded = await Service.getTodayAttendanceByEmployeeId(EMP, 'Thanzeeh');
+    delete rows[100];
+    webCreate(200, '2026-10-14 05:30:00');
+
+    const result = await Service.checkOutToOdoo(loaded.id);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Record does not exist or has been deleted.');
+    expect(rows[200].check_out).toBe(false);
+  });
+
+  test('record only edited on the web (same id) still checks out', async () => {
+    webCreate(100, '2026-10-14 05:31:00');
+    await Service.getTodayAttendanceByEmployeeId(EMP, 'Thanzeeh');
+    rows[100].check_in = '2026-10-14 04:45:00';   // HR corrects the check-in time
+
+    const fresh = await Service.getTodayAttendanceByEmployeeId(EMP, 'Thanzeeh');
+    expect(fresh.id).toBe(100);
+    const result = await Service.checkOutToOdoo(fresh.id);
+    expect(result.success).toBe(true);
+    expect(rows[100].check_out).toBeTruthy();
+  });
+});
