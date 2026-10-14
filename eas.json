@@ -1,21 +1,27 @@
 {
   "build": {
     "preview": {
+      "credentialsSource": "local",
       "android": {
         "buildType": "apk"
       }
     },
     "preview2": {
+      "credentialsSource": "local",
       "android": {
         "gradleCommand": ":app:assembleRelease"
       }
     },
     "preview3": {
+      "credentialsSource": "local",
       "developmentClient": true
     },
     "preview4": {
+      "credentialsSource": "local",
       "distribution": "internal"
     },
-    "production": {}
+    "production": {
+      "credentialsSource": "local"
+    }
   }
 }

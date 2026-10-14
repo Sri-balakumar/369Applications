@@ -16,6 +16,10 @@ web-build/
 *.key
 *.mobileprovision
 
+# EAS signing key (eas.json credentialsSource: local) — never commit
+credentials.json
+credentials/
+
 # Metro
 .metro-health-check*
 
