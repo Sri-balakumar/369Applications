@@ -19,7 +19,7 @@ import {
   searchMyFieldAttendanceOdoo,
   searchMyOfficeAttendanceOdoo,
   startFieldAttendanceOdoo,
-  checkOutFieldAttendanceOdoo,
+  fieldActionCheckOutOdoo,
   readFieldAttendanceDetailOdoo,
   readFieldTripLinesOdoo,
   searchAvailableTripsOdoo,
@@ -1168,7 +1168,15 @@ const UserAttendanceScreen = ({ navigation, route }) => {
 
   const processFieldCheckOut = async (photoBase64) => {
     try {
-      await checkOutFieldAttendanceOdoo(fieldData.attendance_id);
+      // The server stamps check_out, like it stamps check_in. A device clock
+      // running behind the server gave a check_out before check_in, which
+      // Odoo rejects ("Check Out" time cannot be earlier than "Check In").
+      const res = await fieldActionCheckOutOdoo(fieldData.attendance_id);
+      if (res?.error && res.error !== 'already_checked_out') {
+        throw new Error(res.error === 'not_found'
+          ? 'This attendance no longer exists on the server. Please refresh.'
+          : res.error);
+      }
       if (fieldData.attendance_id && photoBase64) {
         try {
           await uploadAttendancePhoto(fieldData.attendance_id, photoBase64, 'check_out');

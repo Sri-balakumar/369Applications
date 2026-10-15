@@ -117,3 +117,17 @@ describe('UserAttendanceScreen — check-out uses the current server record', ()
     expect(body).toContain("showAlert({ message: result.error || 'Check-out failed' })");
   });
 });
+
+describe('UserAttendanceScreen — field check-out time comes from the server', () => {
+  const start = screenText.indexOf('const processFieldCheckOut = async');
+  const body = screenText.slice(start, screenText.indexOf('\n  const ', start + 10));
+
+  test('uses field_action_check_out (server now), not a device-time write', () => {
+    expect(body).toContain('fieldActionCheckOutOdoo(fieldData.attendance_id)');
+    expect(screenText).not.toContain('checkOutFieldAttendanceOdoo');
+  });
+
+  test('surfaces the server error, ignoring an already-closed record', () => {
+    expect(body).toContain("res.error !== 'already_checked_out'");
+  });
+});
