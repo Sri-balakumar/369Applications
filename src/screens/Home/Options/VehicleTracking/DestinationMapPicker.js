@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,20 +17,21 @@ import { showToastMessage } from '@components/Toast';
 import Text from '@components/Text';
 import { COLORS, FONT_FAMILY } from '@constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { searchPlaces } from '@utils/placeSearch';
 
 // Full-screen destination picker rendered with Leaflet + OpenStreetMap inside a
 // WebView — NO Google Maps API key (react-native-maps' Android base is Google
 // Maps, which renders blank without a key; a WebView/Leaflet map avoids Google
-// entirely). The driver searches a place and/or taps the map to drop a marker,
-// then taps Confirm. We reverse-geocode the marker to a readable name and hand
-// {name, latitude, longitude} back to VehicleTrackingForm via the `onPicked`
-// route param. Odoo then find-or-creates the matching vehicle.location.
+// entirely). The default Esri street map labels places in English and the
+// local language; Satellite (Esri) lets the driver find the real building when
+// search can't, and OpenStreetMap stays available for extra detail. The driver searches a place (phone geocoder + Photon +
+// Nominatim, nearest first — see placeSearch.js) and/or taps the map to drop a
+// marker, then taps Confirm. We reverse-geocode the marker to a readable name
+// and hand {name, latitude, longitude} back to VehicleTrackingForm via the
+// `onPicked` route param. Odoo then find-or-creates the matching vehicle.location.
 
-// Nominatim usage policy asks for a descriptive identifier on every request.
-const NOMINATIM_HEADERS = {
-  'User-Agent': 'AlphalizeApp/1.0 (vehicle-tracking destination picker)',
-  'Accept': 'application/json',
-};
+const SUGGEST_DELAY_MS = 450;
+const SUGGEST_MIN_CHARS = 3;
 
 const buildLeafletHtml = (lat, lng, zoom) => `<!DOCTYPE html>
 <html>
@@ -59,13 +60,36 @@ const buildLeafletHtml = (lat, lng, zoom) => `<!DOCTYPE html>
     }
     post({ type: 'log', msg: 'leaflet loaded, init map' });
     var map = L.map('map', { zoomControl: true }).setView([${lat}, ${lng}], ${zoom});
-    var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    var esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+    // Default: Esri street map — labels in English as well as the local
+    // language (OSM's standard map shows only the local name, e.g. Arabic).
+    var tiles = L.tileLayer(esri + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap'
+      attribution: 'Tiles © Esri'
     });
     tiles.on('tileerror', function () { post({ type: 'tileerror' }); });
     tiles.on('load', function () { post({ type: 'tilesloaded' }); });
     tiles.addTo(map);
+    // OpenStreetMap — more buildings/small roads, local-language labels.
+    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    });
+    // Satellite photo + place labels — find the real building when search can't.
+    var satellite = L.layerGroup([
+      L.tileLayer(esri + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Tiles © Esri'
+      }),
+      L.tileLayer(esri + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19
+      })
+    ]);
+    L.control.layers(
+      { 'Map': tiles, 'Satellite': satellite, 'OpenStreetMap': osm },
+      null,
+      { collapsed: false }
+    ).addTo(map);
     var marker = null;
     function place(la, ln) {
       if (marker) { marker.setLatLng([la, ln]); }
@@ -89,13 +113,20 @@ const buildLeafletHtml = (lat, lng, zoom) => `<!DOCTYPE html>
 
 const DestinationMapPicker = ({ route }) => {
   const navigation = useNavigation();
-  const { initialLatitude, initialLongitude, initialName, onPicked } = route?.params || {};
+  const {
+    initialLatitude, initialLongitude, initialName, originLatitude, originLongitude, onPicked,
+  } = route?.params || {};
 
   // Center on the driver's current location when we have it, else a sensible
   // default (roughly central India) so the map isn't stuck in the ocean.
   const startLat = Number.isFinite(Number(initialLatitude)) ? Number(initialLatitude) : 20.5937;
   const startLng = Number.isFinite(Number(initialLongitude)) ? Number(initialLongitude) : 78.9629;
   const hasInitial = Number.isFinite(Number(initialLatitude)) && Number.isFinite(Number(initialLongitude));
+
+  // Search results are ranked nearest to the driver (fall back to map centre).
+  const searchOrigin = Number.isFinite(Number(originLatitude)) && Number.isFinite(Number(originLongitude))
+    ? { latitude: Number(originLatitude), longitude: Number(originLongitude) }
+    : (hasInitial ? { latitude: startLat, longitude: startLng } : null);
 
   const webViewRef = useRef(null);
   const htmlRef = useRef(buildLeafletHtml(startLat, startLng, hasInitial ? 14 : 5));
@@ -148,10 +179,10 @@ const DestinationMapPicker = ({ route }) => {
         console.log('[dest-map] WEBVIEW JS ERROR:', data.msg);
         return;
       case 'tileerror':
-        console.log('[dest-map] OSM tile load error (network/blocked?)');
+        console.log('[dest-map] map tile load error (network/blocked?)');
         return;
       case 'tilesloaded':
-        console.log('[dest-map] OSM tiles loaded');
+        console.log('[dest-map] map tiles loaded');
         return;
       case 'click': {
         const lat = Number(data.lat);
@@ -173,38 +204,57 @@ const DestinationMapPicker = ({ route }) => {
     webViewRef.current?.injectJavaScript(`window.setMarker(${lat}, ${lng}, 16); true;`);
   };
 
-  // Free OpenStreetMap (Nominatim) place search — no Google key.
-  const runSearch = useCallback(async () => {
-    const q = searchText.trim();
+  // Only the newest search may show its results (older ones can finish later).
+  const searchSeqRef = useRef(0);
+  const suggestTimerRef = useRef(null);
+
+  // Free place search — no Google key. `full` (Search button) also asks
+  // Nominatim; typing suggestions skip it (its policy forbids autocomplete).
+  const doSearch = useCallback(async (text, full) => {
+    const q = text.trim();
     if (!q) return;
-    Keyboard.dismiss();
+    const seq = ++searchSeqRef.current;
     setSearching(true);
-    setResults([]);
-    try {
-      const url =
-        'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&q=' +
-        encodeURIComponent(q);
-      const resp = await fetch(url, { headers: NOMINATIM_HEADERS });
-      const data = await resp.json();
-      if (Array.isArray(data) && data.length > 0) {
-        setResults(data);
-      } else {
-        showToastMessage('No places found for that search', 'info');
-      }
-    } catch (e) {
-      showToastMessage('Place search failed. Check your connection.', 'error');
-    } finally {
-      setSearching(false);
+    if (full) setResults([]);
+    const list = await searchPlaces(q, searchOrigin, { includeNominatim: full });
+    if (seq !== searchSeqRef.current) return;
+    setSearching(false);
+    setResults(list);
+    if (full && list.length === 0) {
+      showToastMessage('Not found. Switch to Satellite and tap the building.', 'info');
     }
-  }, [searchText]);
+  }, [searchOrigin?.latitude, searchOrigin?.longitude]);
+
+  const runSearch = useCallback(() => {
+    clearTimeout(suggestTimerRef.current);
+    Keyboard.dismiss();
+    doSearch(searchText, true);
+  }, [searchText, doSearch]);
+
+  const handleSearchTextChange = (text) => {
+    setSearchText(text);
+    clearTimeout(suggestTimerRef.current);
+    if (text.trim().length < SUGGEST_MIN_CHARS) {
+      searchSeqRef.current++;
+      setSearching(false);
+      setResults([]);
+      return;
+    }
+    suggestTimerRef.current = setTimeout(() => doSearch(text, false), SUGGEST_DELAY_MS);
+  };
+
+  useEffect(() => () => clearTimeout(suggestTimerRef.current), []);
 
   const handleSelectResult = (item) => {
-    const lat = parseFloat(item.lat);
-    const lng = parseFloat(item.lon);
+    const lat = item.latitude;
+    const lng = item.longitude;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    console.log('[dest-map] search result picked:', item.display_name, lat, lng);
+    const label = [item.name, item.subtitle].filter(Boolean).join(', ');
+    console.log('[dest-map] search result picked:', label, lat, lng);
+    searchSeqRef.current++;
+    setSearching(false);
     setMarker({ latitude: lat, longitude: lng });
-    setPlaceName(item.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    setPlaceName(label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     moveWebMarker(lat, lng);
     setResults([]);
     setSearchText('');
@@ -236,10 +286,10 @@ const DestinationMapPicker = ({ route }) => {
         <MaterialCommunityIcons name="magnify" size={20} color={COLORS.gray} style={{ marginLeft: 10 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search a place (e.g. Madurai)"
+          placeholder="Search a place, shop or company"
           placeholderTextColor={COLORS.gray}
           value={searchText}
-          onChangeText={setSearchText}
+          onChangeText={handleSearchTextChange}
           onSubmitEditing={runSearch}
           returnKeyType="search"
         />
@@ -257,12 +307,22 @@ const DestinationMapPicker = ({ route }) => {
         <View style={styles.resultsBox}>
           <FlatList
             data={results}
-            keyExtractor={(item, idx) => `${item.place_id || idx}`}
+            keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.resultRow} onPress={() => handleSelectResult(item)}>
                 <MaterialCommunityIcons name="map-marker-outline" size={18} color={COLORS.primaryThemeColor} />
-                <Text style={styles.resultText} numberOfLines={2}>{item.display_name}</Text>
+                <View style={styles.resultTextWrap}>
+                  <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+                  {!!item.subtitle && (
+                    <Text style={styles.resultText} numberOfLines={1}>{item.subtitle}</Text>
+                  )}
+                </View>
+                {item.distanceKm != null && (
+                  <Text style={styles.resultDistance}>
+                    {item.distanceKm < 10 ? item.distanceKm.toFixed(1) : Math.round(item.distanceKm)} km
+                  </Text>
+                )}
               </TouchableOpacity>
             )}
           />
@@ -364,7 +424,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#EEE',
   },
-  resultText: { flex: 1, marginLeft: 8, fontSize: 13, fontFamily: FONT_FAMILY.urbanistRegular, color: '#333' },
+  resultTextWrap: { flex: 1, marginLeft: 8 },
+  resultName: { fontSize: 14, fontFamily: FONT_FAMILY.urbanistSemiBold, color: '#222' },
+  resultText: { fontSize: 12, fontFamily: FONT_FAMILY.urbanistRegular, color: '#666', marginTop: 1 },
+  resultDistance: { marginLeft: 8, fontSize: 12, fontFamily: FONT_FAMILY.urbanistMedium, color: COLORS.gray },
   mapWrap: { flex: 1, margin: 12, borderRadius: 12, overflow: 'hidden', backgroundColor: '#e9e9e9' },
   mapLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e9e9e9' },
   hint: {

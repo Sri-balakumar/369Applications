@@ -1790,6 +1790,9 @@ const VehicleTrackingForm = ({ navigation, route }) => {
       initialLatitude: destCoords?.latitude ?? currentCoords?.latitude ?? sourceCoords?.latitude,
       initialLongitude: destCoords?.longitude ?? currentCoords?.longitude ?? sourceCoords?.longitude,
       initialName: formData.destination || '',
+      // Where the driver is now — search results are ranked nearest to this.
+      originLatitude: currentCoords?.latitude ?? sourceCoords?.latitude,
+      originLongitude: currentCoords?.longitude ?? sourceCoords?.longitude,
       onPicked: ({ name, latitude, longitude }) => {
         handleInputChange('destination', name);
         setDestCoords({ latitude, longitude });
