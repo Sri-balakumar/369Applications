@@ -131,3 +131,24 @@ describe('UserAttendanceScreen — field check-out time comes from the server', 
     expect(body).toContain("res.error !== 'already_checked_out'");
   });
 });
+
+describe('UserAttendanceScreen — session badge and "Session N complete" card', () => {
+  test('badge shows the session and its office hours', () => {
+    expect(screenText).toContain('`SESSION ${info.session}  ·  ${info.start} – ${info.end}`');
+  });
+
+  test('Office and Field both show the badge', () => {
+    expect(screenText).toContain('renderSessionBadge(todayAttendance');
+    expect(screenText).toContain('renderSessionBadge(fieldData?.checkin_session)');
+    expect(screenText).toContain('renderSessionBadge(fieldDetail?.checkin_session || fieldData?.checkin_session)');
+  });
+
+  test('after Session 1 the card says when Session 2 opens', () => {
+    expect(screenText).toContain('`Check in again for Session 2 from ${info.nextStart}`');
+  });
+
+  test('Office check-out no longer says "All Done!" after Session 1', () => {
+    expect(screenText).toContain('hasCheckedOut && renderSessionCompleteCard(');
+    expect(screenText).not.toContain('Your attendance is complete for today');
+  });
+});

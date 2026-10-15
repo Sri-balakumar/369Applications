@@ -704,7 +704,7 @@ const _FIELD_ATTENDANCE_BASE_FIELDS = [
   'trip_total_km', 'trip_total_duration',
   'trip_total_fuel_litres', 'trip_total_fuel_amount',
   'is_late', 'late_minutes', 'late_minutes_display', 'late_reason',
-  'deduction_amount', 'is_waived', 'expected_start_time',
+  'deduction_amount', 'is_waived', 'expected_start_time', 'checkin_session',
 ];
 const _FIELD_ATTENDANCE_PER_TRIP_FIELDS = [
   'source_trip_km_travelled', 'source_trip_duration',

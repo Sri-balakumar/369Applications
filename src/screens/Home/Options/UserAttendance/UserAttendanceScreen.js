@@ -45,7 +45,7 @@ import FieldAttendanceSection from '@screens/Home/Options/UserAttendance/FieldAt
 import TripDetailSheet from '@screens/Home/Options/UserAttendance/FieldAttendance/sheets/TripDetailSheet';
 import VisitsListSheet from '@screens/Home/Options/UserAttendance/FieldAttendance/sheets/VisitsListSheet';
 import ClosePreviousTripSheet from '@screens/Home/Options/UserAttendance/FieldAttendance/sheets/ClosePreviousTripSheet';
-import { computeLocalLateInfo, floatToHM } from '@utils/lateLogic';
+import { computeLocalLateInfo, floatToHM, sessionAt, sessionHours } from '@utils/lateLogic';
 import { formatTimeOffice, formatDateOffice, hydrateOfficeTimezone, getOfficeTimezone } from '@utils/officeTime';
 import * as offlineQueue from '@utils/offlineQueue';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
@@ -229,6 +229,10 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   const [fieldStatus, setFieldStatus] = useState('loading');
   const [fieldData, setFieldData] = useState(null);
   const [fieldSubmitting, setFieldSubmitting] = useState(false);
+
+  // Cached late config (shift type + session hours) for the session badge and
+  // the "Session N complete" card on the Office and Field screens.
+  const [shiftConfig, setShiftConfig] = useState(null);
 
   // Field Attendance — inline detail state for Today tab post-check-in.
   const [fieldDetail, setFieldDetail] = useState(null);  // hr.attendance row + computed totals
@@ -1668,10 +1672,16 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   // non-zero deduction amounts from the slab table.
   useEffect(() => {
     (async () => {
-      if (!verifiedEmployee?.id) return;
+      if (!verifiedEmployee?.id) {
+        setShiftConfig(null);
+        return;
+      }
+      // Cached copy first so the session badge shows offline too.
+      setShiftConfig(await getCachedLateConfig(verifiedEmployee.id));
       if (offline) return;
       try {
         await getLateConfig(verifiedEmployee.id);
+        setShiftConfig(await getCachedLateConfig(verifiedEmployee.id));
         await fetchAndCacheLateSlabs();
         console.log('[offline-late] prefetched late config + slabs for employee', verifiedEmployee.id);
       } catch (e) {
@@ -1691,7 +1701,10 @@ const UserAttendanceScreen = ({ navigation, route }) => {
       if (!verifiedEmployee?.id || offline) return;
       console.log('[office-tz] focus refresh: pulling late config for employee', verifiedEmployee.id, '| tz before:', getOfficeTimezone());
       getLateConfig(verifiedEmployee.id)
-        .then(() => console.log('[office-tz] focus refresh done | tz after:', getOfficeTimezone()))
+        .then(async () => {
+          console.log('[office-tz] focus refresh done | tz after:', getOfficeTimezone());
+          setShiftConfig(await getCachedLateConfig(verifiedEmployee.id));
+        })
         .catch(() => { /* ignore — cached tz stays */ });
     }, [verifiedEmployee?.id, offline])
   );
@@ -2740,6 +2753,48 @@ const UserAttendanceScreen = ({ navigation, route }) => {
   const userName = verifiedEmployee?.name || currentUser?.name || currentUser?.user_name || currentUser?.login || 'User';
   const hasCheckedIn = todayAttendance && !todayAttendance.checkOut;
   const hasCheckedOut = !!(todayAttendance && todayAttendance.checkOut);
+
+  // Split shift: which session the Check In / Check Out cards belong to.
+  // Single shift has no sessions, so no badge.
+  const renderSessionBadge = (session) => {
+    const info = sessionHours(shiftConfig, session);
+    if (!info) return null;
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: scale(6), backgroundColor: '#E3F2FD', borderRadius: scale(20), paddingVertical: scale(5), paddingHorizontal: scale(12), marginBottom: scale(8) }}>
+        <MaterialIcons name="schedule" size={scale(14)} color="#1565C0" />
+        <Text style={{ fontSize: scale(12), fontFamily: FONT_FAMILY.urbanistBold, color: '#1565C0' }}>
+          {`SESSION ${info.session}  ·  ${info.start} – ${info.end}`}
+        </Text>
+      </View>
+    );
+  };
+
+  // Green card after a check-out. Split shift: names the finished session and,
+  // after Session 1, when Session 2 opens. Single shift: the day is done.
+  const renderSessionCompleteCard = (session, checkInText, checkOutText) => {
+    const info = sessionHours(shiftConfig, session);
+    const span = checkInText && checkOutText ? `${checkInText} – ${checkOutText}` : '';
+    const title = info
+      ? `Session ${info.session} complete${span ? ` (${span})` : ''}`
+      : 'Attendance complete for today';
+    let subtitle = span;
+    if (info) {
+      subtitle = info.nextStart
+        ? `Check in again for Session 2 from ${info.nextStart}`
+        : 'Attendance complete for today';
+    }
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), backgroundColor: '#E8F5E9', borderRadius: scale(12), padding: scale(14), marginTop: scale(16), borderLeftWidth: 4, borderLeftColor: '#2E7D32' }}>
+        <MaterialIcons name="check-circle" size={scale(22)} color="#2E7D32" />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: scale(13), fontFamily: FONT_FAMILY.urbanistBold, color: '#1B5E20' }}>{title}</Text>
+          {subtitle ? (
+            <Text style={{ fontSize: scale(12), fontFamily: FONT_FAMILY.urbanistMedium, color: '#2E7D32', marginTop: scale(2) }}>{subtitle}</Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -4021,6 +4076,7 @@ const UserAttendanceScreen = ({ navigation, route }) => {
         {/* Eligible — Office-style Check-In button */}
         {fieldStatus === 'eligible' && !offline && (
           <View style={{ marginTop: scale(8) }}>
+            {renderSessionBadge(fieldData?.checkin_session)}
             <View style={styles.statusCardsContainer}>
               <View style={[styles.statusCard, styles.statusCardInactive]}>
                 <View style={[styles.statusIconContainer, { backgroundColor: '#F5F5F5' }]}>
@@ -4065,6 +4121,10 @@ const UserAttendanceScreen = ({ navigation, route }) => {
         {/* Checked In (open) — full trip management UI + Check Out */}
         {(fieldStatus === 'checked_in_open' || fieldStatus === 'checked_out') && !offline && (
           <View style={{ marginTop: scale(8) }}>
+            {/* Session of the record (the server's `checkin_session` on
+                fieldData is the clock's current session, not the record's). */}
+            {renderSessionBadge(fieldDetail?.checkin_session || fieldData?.checkin_session)}
+
             {/* Time chips */}
             <View style={styles.statusCardsContainer}>
               <View style={[styles.statusCard, fieldData?.check_in ? styles.statusCardActive : styles.statusCardInactive]}>
@@ -4129,15 +4189,12 @@ const UserAttendanceScreen = ({ navigation, route }) => {
                 </Text>
               </TouchableOpacity>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), backgroundColor: '#E8F5E9', borderRadius: scale(12), padding: scale(14), marginTop: scale(16), borderLeftWidth: 4, borderLeftColor: '#2E7D32' }}>
-                <MaterialIcons name="check-circle" size={scale(22)} color="#2E7D32" />
-                <Text style={{ flex: 1, fontSize: scale(13), fontFamily: FONT_FAMILY.urbanistBold, color: '#1B5E20' }}>
-                  {/* Split shift: the server re-opens Field check-in once Session 2 starts. */}
-                  {fieldData?.session2_start != null
-                    ? `Session 1 complete. Check in again for Session 2 from ${floatToHM(fieldData.session2_start)}`
-                    : 'Field attendance complete'}
-                </Text>
-              </View>
+              // Split shift: the server re-opens Field check-in once Session 2 starts.
+              renderSessionCompleteCard(
+                fieldDetail?.checkin_session || fieldData?.checkin_session,
+                fieldData?.check_in ? formatTimeOffice(fieldData.check_in, { hour12: false }) : '',
+                fieldData?.check_out ? formatTimeOffice(fieldData.check_out, { hour12: false }) : '',
+              )
             )}
           </View>
         )}
@@ -4354,6 +4411,11 @@ const UserAttendanceScreen = ({ navigation, route }) => {
           <Text style={styles.userNameText}>{userName}</Text>
         </View>
       </View>
+
+      {/* Session of today's record, or the session the clock is in before check-in. */}
+      {renderSessionBadge(todayAttendance
+        ? (todayAttendance.checkin_session || '1')
+        : sessionAt(currentTime, shiftConfig))}
 
       {/* Status Cards */}
       <View style={styles.statusCardsContainer}>
@@ -4585,14 +4647,12 @@ const UserAttendanceScreen = ({ navigation, route }) => {
           </TouchableOpacity>
         )}
 
-        {hasCheckedOut && (
-          <View style={styles.completedContainer}>
-            <View style={styles.completedIconContainer}>
-              <Ionicons name="checkmark-circle" size={scale(36)} color="#4CAF50" />
-            </View>
-            <Text style={styles.completedTitle}>All Done!</Text>
-            <Text style={styles.completedText}>Your attendance is complete for today</Text>
-          </View>
+        {/* Split shift: after Session 1 this says when Session 2 opens instead
+            of calling the day complete. */}
+        {hasCheckedOut && renderSessionCompleteCard(
+          todayAttendance.checkin_session || '1',
+          liveCheckTime(todayAttendance.checkInTimeUtc, todayAttendance.checkIn),
+          liveCheckTime(todayAttendance.checkOutTimeUtc, todayAttendance.checkOut),
         )}
       </View>
 
