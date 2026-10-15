@@ -57,6 +57,27 @@ const wallClockInTz = (date, timeZone) => {
   }
 };
 
+// Session ('1' | '2') the office clock is in at `date`. Same clock rule as
+// computeLocalLateInfo, without its logging (called on every render).
+export const sessionAt = (date, lateConfig) => {
+  if (!lateConfig || lateConfig.shift_type !== 'split') return '1';
+  const { hour, minute } = wallClockInTz(date, lateConfig.timezone);
+  return hour + minute / 60 >= lateConfig.office_start_hour_2 ? '2' : '1';
+};
+
+// Office hours of `session` for the session badge / "Session N complete"
+// card. Null on a single shift, which has no sessions to tell apart.
+export const sessionHours = (lateConfig, session) => {
+  if (!lateConfig || lateConfig.shift_type !== 'split') return null;
+  const isSession2 = String(session) === '2';
+  return {
+    session: isSession2 ? '2' : '1',
+    start: floatToHM(isSession2 ? lateConfig.office_start_hour_2 : lateConfig.office_start_hour),
+    end: floatToHM(isSession2 ? lateConfig.office_end_hour_2 : lateConfig.office_end_hour),
+    nextStart: isSession2 ? null : floatToHM(lateConfig.office_start_hour_2),
+  };
+};
+
 export const computeLocalLateInfo = (checkInDate, lateConfig) => {
   if (!checkInDate || isNaN(checkInDate?.getTime?.())) return { isLate: false };
 
