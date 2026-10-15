@@ -8,6 +8,7 @@ import { OptionsScreen } from "@screens/Home/Options";
 import { CustomersPage1Screen, CustomersPage2Screen, CustomerCategoryScreen, LeadsListScreen, CreateCustomerScreen } from "@screens/Home/Options/Customers";
 import { VehicleTrackingScreen, VehicleTrackingForm } from "@screens/Home/Options/VehicleTracking";
 import DestinationMapPicker from "@screens/Home/Options/VehicleTracking/DestinationMapPicker";
+import GoogleMapsPlacePicker from "@screens/Home/Options/VehicleTracking/GoogleMapsPlacePicker";
 import { VehicleMaintenanceScreen, VehicleMaintenanceForm } from "@screens/Home/Options/VehicleMaintenance";
 import { VehicleLocationScreen, VehicleLocationForm } from "@screens/Home/Options/VehicleLocation";
 import { StaffTrackingScreen, StaffTrackingForm, StaffTrackingDetails, UserLiveLocation, MyLocation } from "@screens/Home/Options/StaffTracking";
@@ -294,6 +295,12 @@ const StackNavigator = () => {
       <Stack.Screen
         name="DestinationMapPicker"
         component={DestinationMapPicker}
+        options={{ headerShown: false }}
+      />
+      {/* Google Maps website picker for trip destination (default; OSM is its fallback) */}
+      <Stack.Screen
+        name="GoogleMapsPlacePicker"
+        component={GoogleMapsPlacePicker}
         options={{ headerShown: false }}
       />
 

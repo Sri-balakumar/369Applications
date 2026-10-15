@@ -1780,13 +1780,14 @@ const VehicleTrackingForm = ({ navigation, route }) => {
     }
   };
 
-  // Destination = a place picked on the full-screen OSM map. Opens the picker,
-  // seeding it with the best center we have (already-picked dest → current
+  // Destination = a place picked on the Google Maps website (in-app WebView;
+  // its "Use our map" link falls back to the OSM picker with the same params).
+  // Seeded with the best center we have (already-picked dest → current
   // location → source). The picker hands {name, latitude, longitude} back via
   // onPicked, which fills formData.destination + destCoords (the latter feeds
   // the OpenRouteService estimate effect).
   const openDestinationPicker = () => {
-    navigation.navigate('DestinationMapPicker', {
+    navigation.navigate('GoogleMapsPlacePicker', {
       initialLatitude: destCoords?.latitude ?? currentCoords?.latitude ?? sourceCoords?.latitude,
       initialLongitude: destCoords?.longitude ?? currentCoords?.longitude ?? sourceCoords?.longitude,
       initialName: formData.destination || '',
