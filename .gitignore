@@ -18,6 +18,7 @@ web-build/
 
 # EAS signing key (eas.json credentialsSource: local) — never commit
 credentials.json
+credentials.zip
 credentials/
 
 # Metro
